@@ -339,7 +339,19 @@ fn scan_range(
 }
 
 fn to_record(entry: &MftEntry, data_size: Option<u64>) -> Option<RawRecord> {
-    let mut best: Option<(u8, mft::FileNameAttr)> = None;
+    // mft 0.10 presta el nombre desde el buffer del registro, así que se copia
+    // lo necesario en el momento: no se guardan referencias entre atributos.
+    struct Nombre {
+        score: u8,
+        texto: String,
+        parent: u64,
+        logical_size: u64,
+        mtime: i64,
+        atime: i64,
+        attrs: u32,
+    }
+
+    let mut mejor: Option<Nombre> = None;
     let mut mtime = 0i64;
     let mut atime = 0i64;
     let mut attrs = 0u32;
@@ -349,19 +361,29 @@ fn to_record(entry: &MftEntry, data_size: Option<u64>) -> Option<RawRecord> {
         match attr.data {
             MftAttributeContent::AttrX30(f) => {
                 // Win32AndDos(3) > Win32(1) > POSIX(0) > DOS(2): el nombre "lindo".
-                let score = match f.namespace.clone() as u8 {
+                let score = match f.namespace as u8 {
                     3 => 3u8,
                     1 => 2,
                     0 => 1,
                     _ => 0,
                 };
-                if best.as_ref().map(|(s, _)| score > *s).unwrap_or(true) {
-                    best = Some((score, f));
+                if f.name.is_empty() || mejor.as_ref().is_some_and(|m| score <= m.score) {
+                    continue;
                 }
+                mejor = Some(Nombre {
+                    score,
+                    texto: f.name.with_utf8(|s| s.to_string()),
+                    parent: f.parent.entry,
+                    logical_size: f.logical_size,
+                    mtime: f.modified.as_second(),
+                    atime: f.accessed.as_second(),
+                    attrs: f.flags.bits(),
+                });
             }
             MftAttributeContent::AttrX10(si) => {
-                mtime = si.modified.timestamp();
-                atime = si.accessed.timestamp();
+                // mft 0.10 usa jiff: segundos unix directos.
+                mtime = si.modified.as_second();
+                atime = si.accessed.as_second();
                 attrs = si.file_flags.bits();
                 have_std = true;
             }
@@ -369,26 +391,23 @@ fn to_record(entry: &MftEntry, data_size: Option<u64>) -> Option<RawRecord> {
         }
     }
 
-    let (_, fname) = best?;
-    if fname.name.is_empty() {
-        return None;
-    }
+    let nombre = mejor?;
     if !have_std {
-        mtime = fname.modified.timestamp();
-        atime = fname.accessed.timestamp();
-        attrs = fname.flags.bits();
+        mtime = nombre.mtime;
+        atime = nombre.atime;
+        attrs = nombre.attrs;
     }
     let is_dir = entry.is_dir();
     let size = if is_dir {
         u64::MAX
     } else {
-        data_size.unwrap_or(fname.logical_size)
+        data_size.unwrap_or(nombre.logical_size)
     };
 
     Some(RawRecord {
         frn: entry.header.record_number,
-        parent_frn: fname.parent.entry,
-        name: fname.name,
+        parent_frn: nombre.parent,
+        name: nombre.texto,
         size,
         mtime,
         atime,

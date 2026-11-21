@@ -233,13 +233,7 @@ fn cmd_query(args: &Args) -> Result<(), String> {
         } else {
             n.size.to_string()
         };
-        let ts = chrono::DateTime::from_timestamp(n.mtime, 0)
-            .map(|d| {
-                d.with_timezone(&chrono::Local)
-                    .format("%Y-%m-%d %H:%M")
-                    .to_string()
-            })
-            .unwrap_or_default();
+        let ts = census::time::stamp_local(n.mtime);
         println!("{size:>12}  {ts}  {}", ix.full_path(id));
     }
     Ok(())
@@ -274,9 +268,8 @@ fn cmd_bench(args: &Args) -> Result<(), String> {
 
     // 2) Consultas: las cinco formas que emiten las apps.
     let service = Service::new(Arc::clone(&ix));
-    let week_ago = (chrono::Local::now() - chrono::Duration::days(7))
-        .format("%Y-%m-%dT%H:%M:%S")
-        .to_string();
+    let week_ago =
+        census::time::format_local(census::time::now() - 7 * 86_400, "%Y-%m-%dT%H:%M:%S");
     let queries = [
         String::from(""),
         format!("path:\"{}\"", ix.dir_path(ix.root)),

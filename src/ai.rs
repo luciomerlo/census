@@ -490,6 +490,14 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
 
+    /// Las cuotas viven en un `static` compartido: los tests que dependen del
+    /// orden de modelos se serializan y limpian la tabla antes de empezar.
+    static CUOTAS: Mutex<()> = Mutex::new(());
+
+    fn reset_quotas() {
+        *QUOTAS.lock().unwrap() = None;
+    }
+
     /// Transporte falso: devuelve respuestas enlatadas y anota los pedidos.
     struct Fake {
         models: Value,
@@ -565,6 +573,8 @@ mod tests {
 
     #[test]
     fn ranking_prefers_the_known_list_then_bigger_models() {
+        let _g = CUOTAS.lock().unwrap();
+        reset_quotas();
         let available: Vec<String> = [
             "whisper-large-v3",
             "llama-3.1-8b-instant",
@@ -591,6 +601,8 @@ mod tests {
 
     #[test]
     fn a_plain_answer_finishes_in_one_step() {
+        let _g = CUOTAS.lock().unwrap();
+        reset_quotas();
         let fake = Fake::new(vec![answer("Hay 3 PDF.")]);
         let (model, text) =
             ask_auto(&fake, None, "cuantos pdf hay", &backend(), true, &|_| {}).unwrap();
@@ -627,6 +639,8 @@ mod tests {
 
     #[test]
     fn failover_moves_to_the_next_model() {
+        let _g = CUOTAS.lock().unwrap();
+        reset_quotas();
         // El primero responde 429 y el segundo contesta.
         let fake = Fake::new(vec![
             json!({ "error": { "message": "rate limited" }, "_rl": { "req_left": 0 } }),

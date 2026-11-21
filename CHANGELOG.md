@@ -4,6 +4,42 @@ Todos los cambios relevantes de Census. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
 [Versionado Semántico](https://semver.org/lang/es/).
 
+## [0.1.1] — 2026-11-21
+
+Ronda de revisión de bugs y dependencias. Sin cambios de formato ni de protocolo.
+
+### Seguridad
+- **`mft` 0.5.3 → 0.10**: la versión vieja arrastraba **`lru` 0.4.3, con un *use after
+  free*** (RUSTSEC-2021-0130), además de `rand_core` 0.5.1, `atty`, `term`, `simplelog` 0.7
+  y `encoding`. Con la actualización desaparecen todos esos avisos.
+- **`chrono` → `jiff`** (ya venía con `mft`): `chrono` figura como *unmaintained* en RUSTSEC.
+- **`ureq` con `native-tls`** en vez de `rustls`: usa schannel de Windows y saca `ring`,
+  `rustls`, `webpki-roots` e `icu` del árbol.
+- `tools/audit-advisories.py`: revisa el lock contra la base de RUSTSEC sin `cargo audit`
+  (que no se puede instalar en este entorno). Queda **1 aviso**, informativo:
+  `ttf-parser` *unmaintained* vía `egui`.
+- CI corre `rustsec/audit-check` en cada push.
+
+### Corregido
+- **Panics con índice vacío**: `name_string(0)`, `is_drive(0)` y `dir_path(0)` indexaban
+  `nodes[0]` sin comprobar. Ahora usan `get()` y devuelven vacío/false; `name_utf16`
+  también tolera offsets corruptos.
+- **Test flaky**: las cuotas de Groq viven en un `static` y los tests en paralelo se
+  pisaban; los que dependen del orden de modelos ahora se serializan y limpian la tabla.
+- `--compat` registraba sólo la primera clase libre, así que
+  `EVERYTHING_TASKBAR_NOTIFICATION` nunca existía. Ahora hay una ventana por clase.
+- `clippy -D warnings` limpio y `cargo fmt` aplicado.
+
+### Agregado
+- `tests/robustness.rs` y `crates/census-ipc/tests/fuzz_lite.rs`: 20 000 buffers al azar
+  contra los parsers del IPC, truncado byte por byte, 500 snapshots de basura, cabeceras
+  con conteos `u32::MAX`, 5 000 consultas y 5 000 rutas al azar.
+- Suite con `-C overflow-checks=on` (99 tests) y workflow de CI (fmt, clippy, tests,
+  release, auditoría).
+- `census probe`: diagnóstico del IPC (ventanas, capacidades, flags de la respuesta).
+- Mensaje de capacidades `WM_USER + 402` y `flags` de la respuesta con **sólo los campos
+  que vinieron** (`run_count` nunca se anuncia).
+
 ## [Unreleased]
 
 ### Por hacer
@@ -63,5 +99,6 @@ Primera versión que se puede usar de punta a punta.
 - Parseo de MFT sobre [`omerbenamram/mft`](https://github.com/omerbenamram/mft) y
   [`omerbenamram/ntfs`](https://github.com/omerbenamram/ntfs) (MIT).
 
-[Unreleased]: https://github.com/luciomerlo/census/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/luciomerlo/census/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/luciomerlo/census/releases/tag/v0.1.1
 [0.1.0]: https://github.com/luciomerlo/census/releases/tag/v0.1.0

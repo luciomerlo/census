@@ -7,28 +7,25 @@ Census no copia código de Everything. Del proyecto de voidtools sólo se usó e
 
 | Paquete | Versión | Licencia | Uso |
 |---|---|---|---|
-| [`mft`](https://github.com/omerbenamram/mft) (Omer Ben-Amram) | 0.5.3 | MIT OR Apache-2.0 | Parseo de registros `$FILE`: fixups (USA), `$STANDARD_INFORMATION`, `$FILE_NAME`, extensiones. Los avisos de copyright originales están en `~/.cargo/registry/…/mft-0.5.3/LICENSE-{MIT,APACHE}` y se conservan al distribuir el binario. |
-| [`winstructs`](https://github.com/omerbenamram/winstructs) | 0.3.2 | MIT/Apache-2.0 | Dependencia de `mft`: referencias de MFT y timestamps. |
-| [`chrono`](https://github.com/chronotope/chrono) | 0.4 | MIT OR Apache-2.0 | Fechas locales para `dm:` y `rc:`. |
+| [`mft`](https://github.com/omerbenamram/mft) (Omer Ben-Amram) | 0.10 | MIT OR Apache-2.0 | Parseo de registros `$FILE`: fixups (USA), `$STANDARD_INFORMATION`, `$FILE_NAME`, extensiones. Los avisos de copyright originales están en `~/.cargo/registry/…/mft-0.10.0/LICENSE-{MIT,APACHE}` y se conservan al distribuir el binario. |
+| [`jiff`](https://github.com/BurntSushi/jiff) | 0.2 | Unlicense OR MIT | Fechas locales para `dm:` y `rc:`. Viene también con `mft`. Reemplazó a `chrono`. |
 | [`serde_json`](https://github.com/serde-rs/json) | 1.0 | MIT OR Apache-2.0 | JSON del servidor MCP y del asistente. |
-| [`ureq`](https://github.com/algesten/ureq) | 2.12 | MIT OR Apache-2.0 | HTTPS para la API de Groq (búsqueda en lenguaje natural). Trae `rustls`, `ring` y `webpki-roots`, todos permisivos. |
+| [`ureq`](https://github.com/algesten/ureq) | 2.12 | MIT OR Apache-2.0 | HTTPS para la API de Groq (búsqueda en lenguaje natural). Con `native-tls` usa **schannel** de Windows: no arrastra `rustls` ni `ring`. |
 | [`windows-sys`](https://github.com/microsoft/windows-rs) | 0.59 | MIT OR Apache-2.0 | Bindings de Win32 (volumen, `DeviceIoControl`, ventana IPC, DPAPI). |
 
-`cargo tree --depth 1` muestra el resto: son 368 paquetes en total contando
-*dev-dependencies*, **todos** con licencias permisivas. Ninguno obliga a GPL/AGPL, así que
-el binario se puede distribuir bajo MIT.
+El lock tiene **362 paquetes** contando *dev-dependencies*, **todos** con licencias
+permisivas. Ninguno obliga a GPL/AGPL, así que el binario se puede distribuir bajo MIT.
 
 ### Familias de licencia presentes
 
 | Licencia | Paquetes | Nota |
 |---|---:|---|
-| MIT OR Apache-2.0 (y variantes `MIT/Apache-2.0`) | 262 | elección libre entre ambas |
-| MIT sola | 77 | |
+| MIT OR Apache-2.0 (y variantes `MIT/Apache-2.0`) | 184 | elección libre entre ambas |
+| MIT sola | 86 | |
 | Unicode-3.0 | 18 | tablas de `icu` que arrastra `rustls`; permisiva, tipo MIT |
 | Apache-2.0 sola | 10 | |
 | Zlib / CC0-1.0 / ISC / Unlicense / BSD | 37 | todas permisivas |
 | BSL-1.0 | 2 | `clipboard-win`, `error-code`; permisiva |
-| CDLA-Permissive-2.0 | 2 | `webpki-roots`: datos de certificados, uso libre |
 | OFL-1.1 AND Ubuntu-font-1.0 | 1 | `epaint_default_fonts` (ver abajo) |
 | MIT OR Apache-2.0 OR LGPL-2.1-or-later | 1 | `r-efi`: se toma MIT/Apache, la opción LGPL no se usa |
 
@@ -45,8 +42,21 @@ Dos detalles que conviene dejar por escrito:
 Verificación reproducible:
 
 ```powershell
-cargo tree --workspace --format "{p} {l}" | Sort-Object -Unique
+cargo tree --workspace --format "{p} {l}" | Sort-Object -Unique   # licencias
+python tools/audit-advisories.py <ruta-a-rustsec-advisory-db>      # avisos RUSTSEC
 ```
+
+### Avisos de seguridad (RUSTSEC)
+
+Estado actual: **1 aviso, informativo y sin parche posible desde acá**.
+
+| Aviso | Paquete | Estado |
+|---|---|---|
+| RUSTSEC-2026-0192 | `ttf-parser` 0.25.1 | "unmaintained"; llega por `epaint` → `ab_glyph`. No hay vulnerabilidad conocida y sacarlo implica dejar egui |
+
+Se corrigieron al pasar a `mft` 0.10: `lru` 0.4.3 (RUSTSEC-2021-0130, *use after free*),
+`rand_core` 0.5.1, `atty`, `term`, `simplelog` 0.7 y `encoding`; y al cambiar `chrono` por
+`jiff` y `rustls`/`ring` por `native-tls`. CI corre `rustsec/audit-check` en cada push.
 
 ## Referencias de interfaz (sin código copiado)
 

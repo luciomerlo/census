@@ -1,6 +1,6 @@
 [package]
 name = "census-core"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "MIT"
 description = "Indice instantaneo de archivos para Windows (NTFS): lee la MFT y sigue el USN Journal"
@@ -23,10 +23,10 @@ gui = ["dep:eframe"]
 
 [dependencies]
 census-ipc = { path = "crates/census-ipc" }
-mft = "0.5"
-chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+mft = "0.10"
+jiff = "0.2"
 serde_json = "1"
-ureq = { version = "2.12", default-features = false, features = ["tls", "json"] }
+ureq = { version = "2.12", default-features = false, features = ["native-tls", "json"] }
 eframe = { version = "0.31", optional = true, default-features = false, features = ["default_fonts", "glow"] }
 
 [target.'cfg(windows)'.dependencies]

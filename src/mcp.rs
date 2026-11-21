@@ -227,13 +227,12 @@ fn human_size(bytes: u64) -> String {
 }
 
 fn stamp(unix: i64) -> String {
-    chrono::DateTime::from_timestamp(unix, 0)
-        .map(|d| {
-            d.with_timezone(&chrono::Local)
-                .format("%Y-%m-%d %H:%M")
-                .to_string()
-        })
-        .unwrap_or_else(|| "?".into())
+    let s = crate::time::stamp_local(unix);
+    if s.is_empty() {
+        "?".into()
+    } else {
+        s
+    }
 }
 
 fn format_hits(total: usize, offset: usize, hits: &[Hit]) -> String {

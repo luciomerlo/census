@@ -141,13 +141,7 @@ impl GuiApp {
         } else {
             human_size(n.size)
         };
-        let date = chrono::DateTime::from_timestamp(n.mtime, 0)
-            .map(|d| {
-                d.with_timezone(&chrono::Local)
-                    .format("%Y-%m-%d %H:%M")
-                    .to_string()
-            })
-            .unwrap_or_default();
+        let date = crate::time::stamp_local(n.mtime);
         (name, path, size, date, is_dir)
     }
 

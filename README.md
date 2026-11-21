@@ -47,7 +47,7 @@ No se escribe desde cero: se apoya en trabajo abierto ya existente.
 
 | Base | Licencia | Qué se toma |
 |---|---|---|
-| [`omerbenamram/mft`](https://github.com/omerbenamram/mft) | MIT | Parseo de registros `$FILE`: fixups (USA), `$STANDARD_INFORMATION`, `$FILE_NAME`, `$DATA`, extensiones y `$ATTRIBUTE_LIST` |
+| [`omerbenamram/mft`](https://github.com/omerbenamram/mft) | MIT | Parseo de registros `$FILE`: fixups (USA), `$STANDARD_INFORMATION`, `$FILE_NAME`, `$DATA`, extensiones y `$ATTRIBUTE_LIST` (0.10, que además trae `jiff` para las fechas) |
 | [`omerbenamram/ntfs`](https://github.com/omerbenamram/ntfs) | MIT | Lectura de bajo nivel del volumen y de los *data runs* de la MFT |
 | [Everything SDK](https://www.voidtools.com/support/everything/sdk/) (voidtools) | Documentación pública | Sólo el **layout del protocolo IPC** (QUERY2 / QUERY2W) para interoperar. No se usa, copia ni redistribuye código ni binarios de voidtools |
 
@@ -209,10 +209,22 @@ Lo que dice ese número: el parseo no es el cuello de botella — **el disco sí
 lectura pasó de 4.224 ms a 2.834 ms leyendo la MFT desde varios hilos; el mismo equipo
 debería bajar a ~1,5 s con lecturas más grandes.
 
+## Seguridad de dependencias
+
+`tools/audit-advisories.py` revisa `Cargo.lock` contra la base de RUSTSEC:
+
+```
+lock: 341 paquetes · avisos revisados: 1536
+1 aviso aplicable: RUSTSEC-2026-0192 ttf-parser [unmaintained] (vía egui)
+```
+
+La versión 0.1.1 sacó `lru` 0.4.3 (use-after-free), `rand_core` 0.5.1, `chrono` y
+`ring`/`rustls`. CI corre `rustsec/audit-check` en cada push.
+
 ## Estado
 
 Motor, protocolo IPC, snapshot, ventana con tres temas y servidor MCP funcionando y
-medidos: **84 tests en verde** (`cargo test --workspace`), incluidos 13 de conformidad
+medidos: **99 tests en verde** (incluidos los de robustez y fuzz-lite) (`cargo test --workspace`), incluidos 13 de conformidad
 byte a byte del protocolo y 8 del formato `C.wcat`.
 
 Falta: delta por USN Journal (hoy el snapshot se reusa con una ventana de 30 s), el shim

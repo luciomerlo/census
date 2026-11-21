@@ -1,7 +1,5 @@
 //! Parseo y evaluación de las consultas que consumen las apps.
 
-use chrono::{Local, NaiveDate, NaiveDateTime, TimeZone};
-
 use crate::index::{contains_ignore_case, fold, to_units_lower, Index, F_DIR};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -101,39 +99,6 @@ fn normalize_path(s: &str) -> String {
     }
 }
 
-fn local_date_bounds(date: NaiveDate) -> Option<(i64, i64)> {
-    let start = Local
-        .from_local_datetime(&date.and_hms_opt(0, 0, 0)?)
-        .single()?
-        .timestamp();
-    Some((start, start + 86_400))
-}
-
-fn parse_local_stamp(s: &str) -> Option<i64> {
-    let s = unquote(s.trim());
-    const DT: [&str; 5] = [
-        "%Y-%m-%dT%H:%M:%S",
-        "%Y-%m-%dT%H:%M",
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d %H:%M",
-        "%Y/%m/%d %H:%M:%S",
-    ];
-    for f in DT {
-        if let Ok(dt) = NaiveDateTime::parse_from_str(s, f) {
-            return Local
-                .from_local_datetime(&dt)
-                .single()
-                .map(|d| d.timestamp());
-        }
-    }
-    for f in ["%Y-%m-%d", "%Y/%m/%d"] {
-        if let Ok(d) = NaiveDate::parse_from_str(s, f) {
-            return local_date_bounds(d).map(|(a, _)| a);
-        }
-    }
-    None
-}
-
 /// Funciones de Everything que dejamos afuera a propósito. Se informan en vez
 /// de convertirse en un término de búsqueda silencioso.
 const UNSUPPORTED: [&str; 24] = [
@@ -230,14 +195,10 @@ pub fn parse(raw: &str, ix: &Index) -> Query {
             }
         } else if lower.starts_with("dm:") {
             let v = lower.strip_prefix("dm:").unwrap_or("").to_string();
-            let now = Local::now().date_naive();
             let bounds = match v.as_str() {
-                "today" => local_date_bounds(now),
-                "yesterday" => now.pred_opt().and_then(local_date_bounds),
-                _ => parse_local_stamp(&token[3..]).and_then(|t| {
-                    let d = Local.timestamp_opt(t, 0).single()?;
-                    local_date_bounds(d.date_naive())
-                }),
+                "today" => crate::time::today_bounds(),
+                "yesterday" => crate::time::yesterday_bounds(),
+                _ => crate::time::parse_local_stamp(&token[3..]).and_then(crate::time::day_bounds),
             };
             if let Some((a, b)) = bounds {
                 q.min_mtime = Some(q.min_mtime.map_or(a, |x| x.max(a)));
@@ -258,7 +219,8 @@ pub fn parse(raw: &str, ix: &Index) -> Query {
             } else {
                 (Cmp::Ge, body)
             };
-            match parse_local_stamp(rest) {
+            let limpio = unquote(rest.trim());
+            match crate::time::parse_local_stamp(limpio) {
                 Some(t) => match cmp {
                     Cmp::Ge => q.min_mtime = Some(q.min_mtime.map_or(t, |x| x.max(t))),
                     Cmp::Gt => q.min_mtime = Some(q.min_mtime.map_or(t + 1, |x| x.max(t + 1))),
@@ -499,7 +461,7 @@ mod tests {
     fn dm_today_uses_local_midnight() {
         let ix = ix();
         // Un archivo con mtime de hoy tiene que entrar; uno viejo no.
-        let now = Local::now().timestamp();
+        let now = crate::time::now();
         let mut b = crate::index::Builder::with_capacity(4);
         b.push(rec(5, 5, ".", true, 0, 0));
         b.push(rec(9, 5, "hoy.txt", false, 1, now));

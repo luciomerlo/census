@@ -85,7 +85,7 @@ fn build_volume(letter: char) -> Result<(Index, source::ScanStats), String> {
     ix.stats.records = stats.records;
     ix.stats.skipped = stats.skipped;
     ix.stats.build_ms = t0.elapsed().as_millis();
-    ix.built_at = chrono::Local::now().timestamp();
+    ix.built_at = crate::time::now();
     Ok((ix, stats))
 }
 
@@ -116,7 +116,7 @@ fn build_dir(root: &Path) -> Result<(Index, source::ScanStats), String> {
     let mut ix = b.finish(letter);
     ix.stats.records = stats.records;
     ix.stats.build_ms = t0.elapsed().as_millis();
-    ix.built_at = chrono::Local::now().timestamp();
+    ix.built_at = crate::time::now();
     Ok((ix, stats))
 }
 
@@ -208,7 +208,7 @@ pub fn index_all() -> Result<(Arc<Index>, Vec<DriveReport>), String> {
         ));
     }
     let mut merged = Index::merge(vols);
-    merged.built_at = chrono::Local::now().timestamp();
+    merged.built_at = crate::time::now();
     Ok((Arc::new(merged), reports))
 }
 
