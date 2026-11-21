@@ -50,7 +50,12 @@ fuerza Wiz y Census a la vez, **Wiz gana**: Census pausa en el próximo punto se
 | 5 | 1 | Census | **C3** robustez de `serve`: dos instancias, cliente colgado, sin elevación | `disk:0` | — | 2 h | sí | sí |
 | 5 | 1 | Census | **C4** documentación del contrato + `census probe` extendido | `cpu` | — | 1,5 h | sí | sí |
 | 5 | 2 | Sort | **S-3b** OCR: idiomas ausentes, caché y pruebas con escaneo real | `gpu:0`, `cpu` | — | 3,5 h | sí | sí |
-| 6 | buffer | cualquiera | regresión cruzada: migración real, `.ecat`/WOF, integración | `disk:0` | — | 4 h | sí | sí |
+| 6 | 1 | Census | **C5** nube explícita: fuera de `index_all`, `--include-cloud` metadata-only | `cloud:google` | `G:\`, `H:\` | 2 h | sí | sí |
+| 6 | 1 | Census | **C6** `activity.json` + locks `disk:<n>` y `cloud:<p>`, aviso de conflicto | `cpu` | — | 2,5 h | sí | sí |
+| 7 | buffer | cualquiera | regresión cruzada: migración real, `.ecat`/WOF, integración | `disk:0` | — | 4 h | sí | sí |
+
+El shim `Everything64.dll` **sale del calendario**: Sort confirmó que no lo usa (va por
+`WM_COPYDATA`). `crates/census-shim` queda como placeholder opcional.
 
 Reparto por disco: en ninguna noche hay dos bloques pesados sobre el mismo `disk:0`
 simultáneos. Si el usuario fuerza Wiz y Census a la vez, Census cede.
