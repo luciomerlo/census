@@ -27,6 +27,8 @@ public class CensusWin {
     [DllImport("user32.dll")] public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder sb, int max);
     [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb, IntPtr p);
     [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr hWnd, int x, int y, int w, int h, bool repaint);
+    [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int w, int h, uint flags);
+    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int cmd);
     public delegate bool EnumProc(IntPtr hWnd, IntPtr p);
 
     // La ventana del proceso que interesa: la mas grande que no sea la consola.
@@ -64,8 +66,15 @@ try {
     $wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
     $ww = [Math]::Min($wa.Width - 20, 1180)
     $wh = [Math]::Min($wa.Height - 20, 660)
+    [CensusWin]::ShowWindow($h, 9) | Out-Null          # SW_RESTORE
     [CensusWin]::MoveWindow($h, 10, 10, $ww, $wh, $true) | Out-Null
-    Start-Sleep -Milliseconds 700
+    # Sin esto la captura puede salir con la ventana de atrás: CopyFromScreen
+    # toma lo que esté encima en ese rectángulo.
+    $TOPMOST = [IntPtr](-1)
+    $NOTOPMOST = [IntPtr](-2)
+    [CensusWin]::SetWindowPos($h, $TOPMOST, 10, 10, $ww, $wh, 0x0040) | Out-Null
+    [CensusWin]::SetForegroundWindow($h) | Out-Null
+    Start-Sleep -Milliseconds 900
 
     $r = New-Object CensusWin+RECT
     [CensusWin]::GetWindowRect($h, [ref]$r) | Out-Null
@@ -84,6 +93,7 @@ try {
     $bmp.Save($out, [System.Drawing.Imaging.ImageFormat]::Png)
     $g.Dispose()
     $bmp.Dispose()
+    [CensusWin]::SetWindowPos($h, $NOTOPMOST, 10, 10, $ww, $wh, 0x0040) | Out-Null
     "ok: $out ($w x $hgt)"
 } catch {
     "error: $_"

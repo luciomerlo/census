@@ -2,26 +2,89 @@
 
 use crate::index::{contains_ignore_case, fold, to_units_lower, Index, F_DIR};
 
+/// Orden de los resultados. Los números coinciden con los del protocolo de
+/// Everything (1..8), que es lo que piden las apps.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Sort {
     #[default]
     NameAsc,
     NameDesc,
+    PathAsc,
+    PathDesc,
+    SizeAsc,
+    SizeDesc,
+    DateAsc,
+    DateDesc,
 }
 
 impl Sort {
+    /// 1 nombre↑, 2 nombre↓, 3 ruta↑, 4 ruta↓, 5 tamaño↑, 6 tamaño↓,
+    /// 7 fecha↑, 8 fecha↓. Cualquier otro valor cae a nombre ascendente.
     pub fn from_proto(sort: u32) -> Self {
         match sort {
             2 => Sort::NameDesc,
+            3 => Sort::PathAsc,
+            4 => Sort::PathDesc,
+            5 => Sort::SizeAsc,
+            6 => Sort::SizeDesc,
+            7 => Sort::DateAsc,
+            8 => Sort::DateDesc,
             _ => Sort::NameAsc,
         }
     }
 
+    pub fn to_proto(self) -> u32 {
+        match self {
+            Sort::NameAsc => 1,
+            Sort::NameDesc => 2,
+            Sort::PathAsc => 3,
+            Sort::PathDesc => 4,
+            Sort::SizeAsc => 5,
+            Sort::SizeDesc => 6,
+            Sort::DateAsc => 7,
+            Sort::DateDesc => 8,
+        }
+    }
+
     pub fn parse(s: &str) -> Option<Self> {
-        match s {
+        match s.to_ascii_lowercase().as_str() {
             "name" | "name-asc" | "asc" => Some(Sort::NameAsc),
             "name-desc" | "desc" => Some(Sort::NameDesc),
+            "path" | "path-asc" => Some(Sort::PathAsc),
+            "path-desc" => Some(Sort::PathDesc),
+            "size" | "size-desc" | "largest" => Some(Sort::SizeDesc),
+            "size-asc" | "smallest" => Some(Sort::SizeAsc),
+            "date" | "date-desc" | "newest" => Some(Sort::DateDesc),
+            "date-asc" | "oldest" => Some(Sort::DateAsc),
             _ => None,
+        }
+    }
+
+    /// Etiqueta corta para el botón de la ventana.
+    pub fn label(self) -> &'static str {
+        match self {
+            Sort::NameAsc => "Nombre A-Z",
+            Sort::NameDesc => "Nombre Z-A",
+            Sort::PathAsc => "Ruta A-Z",
+            Sort::PathDesc => "Ruta Z-A",
+            Sort::SizeAsc => "Tamaño ↑",
+            Sort::SizeDesc => "Tamaño ↓",
+            Sort::DateAsc => "Fecha ↑",
+            Sort::DateDesc => "Fecha ↓",
+        }
+    }
+
+    /// Siguiente orden al hacer clic: nombre → tamaño → fecha → ruta → nombre.
+    pub fn next(self) -> Self {
+        match self {
+            Sort::NameAsc => Sort::NameDesc,
+            Sort::NameDesc => Sort::SizeDesc,
+            Sort::SizeDesc => Sort::SizeAsc,
+            Sort::SizeAsc => Sort::DateDesc,
+            Sort::DateDesc => Sort::DateAsc,
+            Sort::DateAsc => Sort::PathAsc,
+            Sort::PathAsc => Sort::PathDesc,
+            Sort::PathDesc => Sort::NameAsc,
         }
     }
 }
@@ -296,13 +359,16 @@ impl Index {
                 return false;
             }
         }
-        let name = self.name_utf16(id);
+        // Un término suelto se busca en el nombre y también en las carpetas
+        // que lo contienen, que es lo que espera quien escribe "windows temp".
+        // Sin comodines ni regex: es subcadena y nada más.
         for t in &q.terms {
-            if !contains_ignore_case(name, t) {
+            if !self.term_matches(id, t) {
                 return false;
             }
         }
         if !q.exts.is_empty() {
+            let name = self.name_utf16(id);
             // Extensión = lo que sigue al último punto del nombre.
             let mut dot = None;
             for (i, u) in name.iter().enumerate() {
@@ -317,6 +383,25 @@ impl Index {
             }
         }
         true
+    }
+
+    /// ¿El término aparece en el nombre o en alguna carpeta ancestro?
+    fn term_matches(&self, id: u32, term: &[u16]) -> bool {
+        if contains_ignore_case(self.name_utf16(id), term) {
+            return true;
+        }
+        let mut cur = id;
+        for _ in 0..64 {
+            let Some(p) = self.parent(cur) else { break };
+            if p == cur {
+                break;
+            }
+            if contains_ignore_case(self.name_utf16(p), term) {
+                return true;
+            }
+            cur = p;
+        }
+        false
     }
 
     /// Ids que cumplen la consulta, en orden de índice (sin ordenar).
@@ -339,26 +424,75 @@ impl Index {
         out
     }
 
+    /// Compara dos nombres sin distinguir mayúsculas ni acentos.
+    fn cmp_name(&self, a: u32, b: u32) -> std::cmp::Ordering {
+        let na = self.name_utf16(a);
+        let nb = self.name_utf16(b);
+        let n = na.len().min(nb.len());
+        for i in 0..n {
+            let fa = fold(na[i]);
+            let fb = fold(nb[i]);
+            if fa != fb {
+                return fa.cmp(&fb);
+            }
+        }
+        na.len().cmp(&nb.len())
+    }
+
+    /// Ordena los ids según `sort`.
+    ///
+    /// Para tamaño, las carpetas (que no tienen tamaño propio) van siempre al
+    /// final: en WizTree el árbol de carpetas se lee aparte del de archivos.
     pub fn sort_ids(&self, ids: &mut [u32], sort: Sort) {
-        let asc = sort == Sort::NameAsc;
-        ids.sort_unstable_by(|&a, &b| {
-            let na = self.name_utf16(a);
-            let nb = self.name_utf16(b);
-            let n = na.len().min(nb.len());
-            for i in 0..n {
-                let fa = fold(na[i]);
-                let fb = fold(nb[i]);
-                if fa != fb {
-                    return if asc { fa.cmp(&fb) } else { fb.cmp(&fa) };
-                }
-            }
-            let ord = na.len().cmp(&nb.len());
-            if asc {
-                ord
+        use std::cmp::Ordering;
+        let size_of = |id: u32| -> Option<u64> {
+            let n = &self.nodes[id as usize];
+            if n.flags & F_DIR != 0 {
+                None
             } else {
-                ord.reverse()
+                Some(n.size)
             }
-        });
+        };
+        match sort {
+            Sort::NameAsc => ids.sort_unstable_by(|&a, &b| self.cmp_name(a, b)),
+            Sort::NameDesc => ids.sort_unstable_by(|&a, &b| self.cmp_name(b, a)),
+            Sort::PathAsc => ids.sort_unstable_by(|&a, &b| {
+                self.nodes[a as usize]
+                    .parent
+                    .cmp(&self.nodes[b as usize].parent)
+                    .then_with(|| self.cmp_name(a, b))
+            }),
+            Sort::PathDesc => ids.sort_unstable_by(|&a, &b| {
+                self.nodes[b as usize]
+                    .parent
+                    .cmp(&self.nodes[a as usize].parent)
+                    .then_with(|| self.cmp_name(b, a))
+            }),
+            Sort::SizeDesc => ids.sort_unstable_by(|&a, &b| match (size_of(a), size_of(b)) {
+                (Some(x), Some(y)) => y.cmp(&x).then_with(|| self.cmp_name(a, b)),
+                (Some(_), None) => Ordering::Less,
+                (None, Some(_)) => Ordering::Greater,
+                (None, None) => self.cmp_name(a, b),
+            }),
+            Sort::SizeAsc => ids.sort_unstable_by(|&a, &b| match (size_of(a), size_of(b)) {
+                (Some(x), Some(y)) => x.cmp(&y).then_with(|| self.cmp_name(a, b)),
+                (Some(_), None) => Ordering::Less,
+                (None, Some(_)) => Ordering::Greater,
+                (None, None) => self.cmp_name(a, b),
+            }),
+            Sort::DateDesc => ids.sort_unstable_by(|&a, &b| {
+                self.nodes[b as usize]
+                    .mtime
+                    .cmp(&self.nodes[a as usize].mtime)
+                    .then_with(|| self.cmp_name(a, b))
+            }),
+            Sort::DateAsc => ids.sort_unstable_by(|&a, &b| {
+                self.nodes[a as usize]
+                    .mtime
+                    .cmp(&self.nodes[b as usize].mtime)
+                    .then_with(|| self.cmp_name(a, b))
+            }),
+        }
     }
 }
 
@@ -506,5 +640,50 @@ mod tests {
         assert_eq!(names(&ix, &ids), vec!["informe.pdf", "notas.txt"]);
         ix.sort_ids(&mut ids, Sort::NameDesc);
         assert_eq!(names(&ix, &ids), vec!["notas.txt", "informe.pdf"]);
+    }
+
+    #[test]
+    fn a_plain_term_also_matches_the_folder() {
+        let ix = ix();
+        // "lucio" no está en ningún nombre de archivo: está en la carpeta.
+        let q = parse("lucio", &ix);
+        let encontrados = names(&ix, &ix.match_ids(&q));
+        assert!(
+            encontrados.contains(&"informe.pdf".to_string()),
+            "{encontrados:?}"
+        );
+        assert!(encontrados.contains(&"notas.txt".to_string()));
+        // Y también aparece la propia carpeta que coincide.
+        assert!(encontrados.contains(&"Lucio".to_string()));
+    }
+
+    #[test]
+    fn a_plain_term_matches_the_extension() {
+        let ix = ix();
+        let q = parse("pdf", &ix);
+        let encontrados = names(&ix, &ix.match_ids(&q));
+        assert_eq!(encontrados, vec!["informe.pdf".to_string()]);
+    }
+
+    #[test]
+    fn fragments_are_substrings_and_nothing_else() {
+        let ix = ix();
+        // Sin comodines ni regex: "*" es un carácter literal y no matchea nada.
+        assert!(ix.match_ids(&parse("*", &ix)).is_empty());
+        assert!(ix.match_ids(&parse("informe.p", &ix)).len() == 1);
+        assert!(ix.match_ids(&parse("INFORME", &ix)).len() == 1);
+        // Un pedazo en el medio del nombre también sirve.
+        assert!(ix.match_ids(&parse("form", &ix)).len() == 1);
+    }
+
+    #[test]
+    fn several_fragments_must_all_match() {
+        let ix = ix();
+        // "lucio" está en la carpeta y "txt" en el nombre: la combinación filtra.
+        let q = parse("lucio txt", &ix);
+        let encontrados = names(&ix, &ix.match_ids(&q));
+        assert_eq!(encontrados, vec!["notas.txt".to_string()]);
+        assert!(ix.match_ids(&parse("lucio pdf", &ix)).len() == 1);
+        assert!(ix.match_ids(&parse("lucio nada", &ix)).is_empty());
     }
 }

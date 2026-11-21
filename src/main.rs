@@ -12,13 +12,15 @@ fn usage() -> &'static str {
 Census - indice instantaneo de archivos (NTFS)
 
   census index  [--volume C] [--root <dir>] [--json]
-  census query  \"<expr>\" [--volume C] [--root <dir>] [--limit N] [--offset N] [--sort name|desc]
+  census query  \"<expr>\" [--volume C] [--root <dir>] [--limit N] [--offset N] [--sort name|desc|size|date|path]
   census bench  [--volume C] [--repeat N]
   census serve  [--volume C] [--compat]
   census mcp    [--volume C] [--root <dir>]     servidor MCP por stdio para agentes
   census gui    [--volume C] [--root <dir>] [--theme dark|light|contrast] [--smoke]
   census drives  Unidades disponibles, su tipo y como se indexan
   census probe   Diagnostico del IPC: ventana, capacidades y estado del servidor
+  census pause   [--until 22:00 | --for 8h]  Pausa el indexado de fondo
+  census resume  Reanuda el indexado de fondo
   census ask <pregunta>   Lenguaje natural con Groq (usa las herramientas MCP)
   census key <clave>      Guarda la clave de Groq cifrada con DPAPI (--clear borra)
 
@@ -80,12 +82,20 @@ fn cached_snapshot(args: &Args) -> Option<(Arc<Index>, String)> {
         return None;
     }
     let path = census::snapshot::default_path()?;
+    let _ = &max_age;
     let age = std::fs::metadata(&path)
         .ok()?
         .modified()
         .ok()?
         .elapsed()
         .ok()?;
+    // En pausa no tiene sentido reindexar: se usa el snapshot aunque esté
+    // viejo, que es justo lo que el usuario pidió al pausar.
+    let max_age = if census::pause::is_paused() {
+        u64::MAX
+    } else {
+        max_age
+    };
     if age.as_secs() > max_age {
         return None;
     }
@@ -347,6 +357,38 @@ fn cmd_key(args: &Args) -> Result<(), String> {
 }
 
 /// Diagnostico: ve la ventana IPC de un `census serve` en ejecucion.
+/// `census pause [--until 22:00 | --for 8h]`: corta el trabajo de fondo.
+fn cmd_pause(args: &Args) -> Result<(), String> {
+    let hasta = if let Some(hhmm) = args.get("until") {
+        let (h, m) = hhmm
+            .split_once(':')
+            .ok_or_else(|| String::from("--until espera HH:MM"))?;
+        let h: u32 = h.parse().map_err(|_| String::from("hora inválida"))?;
+        let m: u32 = m.parse().map_err(|_| String::from("minuto inválido"))?;
+        Some(census::pause::until_local(h, m).ok_or_else(|| String::from("hora inválida"))?)
+    } else if let Some(horas) = args.get("for") {
+        let h: f64 = horas
+            .parse()
+            .map_err(|_| String::from("--for espera horas"))?;
+        Some((census::time::now() + (h * 3600.0) as i64) * 1000)
+    } else {
+        None
+    };
+    let p = census::pause::pause_until(hasta).map_err(|e| e.to_string())?;
+    match p.resume_at {
+        Some(at) => println!("en pausa hasta {}", census::time::stamp_local(at / 1000)),
+        None => println!("en pausa hasta que ejecutes `census resume`"),
+    }
+    println!("las consultas siguen funcionando; se frena el indexado de fondo");
+    Ok(())
+}
+
+fn cmd_resume() -> Result<(), String> {
+    census::pause::resume().map_err(|e| e.to_string())?;
+    println!("reanudado");
+    Ok(())
+}
+
 fn cmd_probe() -> Result<(), String> {
     use windows_sys::Win32::UI::WindowsAndMessaging::FindWindowW;
     let wide = |s: &str| -> Vec<u16> { s.encode_utf16().chain(std::iter::once(0)).collect() };
@@ -513,6 +555,8 @@ fn main() -> ExitCode {
         "mcp" => cmd_mcp(&rest()),
         "gui" => cmd_gui(&rest()),
         "drives" => cmd_drives(),
+        "pause" => cmd_pause(&rest()),
+        "resume" => cmd_resume(),
         "probe" => cmd_probe(),
         "ask" => cmd_ask(&rest()),
         "key" => cmd_key(&rest()),

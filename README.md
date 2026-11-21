@@ -129,7 +129,7 @@ lo detecta por IPC y usa ese índice en vez de intentar leer la MFT.
 - Carga inicial: abre `\\.\C:`, pide geometría con `FSCTL_GET_NTFS_VOLUME_DATA`, parsea
   los *data runs* de `$DATA` del registro 0 y lee la MFT en bloques, en paralelo.
 - Índice en RAM en arrays planos (~48 B por nodo, nombres en una arena UTF-16).
-- Snapshot propio en `%LOCALAPPDATA%\Census\C.wcat`: cabecera de 64 B, versión, raíces,
+- Snapshot propio en `%LOCALAPPDATA%\Census\C.wcat`: cabecera de 89 B, versión, raíces,
   nodos y arena, con checksum FNV-1a. Se reusa si tiene menos de 30 s (`--max-age`) y
   cubre las mismas unidades; `--rebuild` obliga a releer la MFT.
 - Consultas: `""`, `path:"X"`, `file:`, `folder:`, `dm:`, `rc:>=`, `ext:`, `size:` y

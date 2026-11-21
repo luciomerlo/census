@@ -1,10 +1,12 @@
 //! Índice instantáneo de archivos para Windows.
 
 pub mod ai;
+mod dirsize;
 #[cfg(feature = "gui")]
 pub mod gui;
 pub mod index;
 pub mod mcp;
+pub mod pause;
 pub mod query;
 pub mod service;
 pub mod snapshot;

@@ -43,6 +43,8 @@ pub struct Index {
     pub names: Vec<u16>,
     pub stats: Stats,
     pub built_at: i64,
+    /// Tamaño recursivo por nodo (archivos: su tamaño; carpetas: la suma).
+    pub dir_bytes: Vec<u64>,
 }
 
 pub struct Builder {
@@ -144,7 +146,7 @@ impl Builder {
         }
         stats.name_units = self.names.len() as u64;
 
-        Index {
+        let mut ix = Index {
             letter: letter.to_ascii_uppercase(),
             root,
             roots: vec![root],
@@ -152,7 +154,10 @@ impl Builder {
             names: self.names,
             stats,
             built_at: 0,
-        }
+            dir_bytes: Vec::new(),
+        };
+        ix.compute_dir_bytes();
+        ix
     }
 }
 
@@ -311,7 +316,7 @@ impl Index {
             }
         }
         let root = roots.first().copied().unwrap_or(0);
-        Index {
+        let mut ix = Index {
             letter,
             root,
             roots,
@@ -319,7 +324,10 @@ impl Index {
             names,
             stats,
             built_at,
-        }
+            dir_bytes: Vec::new(),
+        };
+        ix.compute_dir_bytes();
+        ix
     }
 
     pub fn is_under(&self, ancestor: u32, id: u32) -> bool {

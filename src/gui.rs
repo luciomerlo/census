@@ -10,6 +10,7 @@ use std::sync::Arc;
 use eframe::egui::{self, Align2, Color32, FontId, Key, Rect, RichText, Sense, Vec2};
 
 use crate::index::F_DIR;
+
 use crate::query::{self, Sort};
 use crate::theme::Theme;
 use crate::Index;
@@ -22,6 +23,7 @@ enum Column {
     Name,
     Path,
     Size,
+    Percent,
     Modified,
 }
 
@@ -58,6 +60,13 @@ pub struct GuiApp {
     ai_question: String,
     key_dialog: bool,
     key_input: String,
+    /// Resumen de los resultados actuales, para el panel derecho y la columna %.
+    sum_size: u64,
+    n_files: usize,
+    n_dirs: usize,
+    types: Vec<(String, u64, usize)>,
+    /// Pausa del trabajo de fondo (indexado), persistida en disco.
+    pause: crate::pause::Pause,
 }
 
 fn settings_path() -> Option<PathBuf> {
@@ -117,6 +126,11 @@ impl GuiApp {
             ai_question: String::new(),
             key_dialog: false,
             key_input: String::new(),
+            sum_size: 0,
+            n_files: 0,
+            n_dirs: 0,
+            types: Vec::new(),
+            pause: crate::pause::current(),
         }
     }
 
@@ -129,6 +143,48 @@ impl GuiApp {
         self.elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
         self.ids = ids;
         self.selected = None;
+        self.summarize();
+    }
+
+    /// Totales y desglose por extensión de lo que se está mostrando.
+    fn summarize(&mut self) {
+        self.sum_size = 0;
+        self.n_files = 0;
+        self.n_dirs = 0;
+        let mut por_ext: std::collections::HashMap<String, (u64, usize)> =
+            std::collections::HashMap::new();
+        for &id in &self.ids {
+            let n = &self.index.nodes[id as usize];
+            if n.flags & F_DIR != 0 {
+                self.n_dirs += 1;
+                self.sum_size = self.sum_size.saturating_add(self.index.recursive_size(id));
+                continue;
+            }
+            self.n_files += 1;
+            self.sum_size = self.sum_size.saturating_add(n.size);
+            let name = self.index.name_string(id);
+            let ext = name
+                .rsplit_once('.')
+                .map(|(_, e)| e.to_ascii_lowercase())
+                .filter(|e| !e.is_empty() && e.len() <= 8)
+                .unwrap_or_else(|| "(sin extensión)".into());
+            let e = por_ext.entry(ext).or_insert((0, 0));
+            e.0 = e.0.saturating_add(n.size);
+            e.1 += 1;
+        }
+        let mut types: Vec<(String, u64, usize)> =
+            por_ext.into_iter().map(|(k, (b, c))| (k, b, c)).collect();
+        types.sort_unstable_by_key(|(_, b, _)| std::cmp::Reverse(*b));
+        types.truncate(8);
+        self.types = types;
+    }
+
+    /// Porcentaje del tamaño total que representa este archivo.
+    fn percent_of(&self, id: u32) -> Option<f64> {
+        if self.sum_size == 0 {
+            return None;
+        }
+        Some(self.index.recursive_size(id) as f64 * 100.0 / self.sum_size as f64)
     }
 
     fn human(&self, id: u32) -> (String, String, String, String, bool) {
@@ -136,12 +192,12 @@ impl GuiApp {
         let name = self.index.name_string(id);
         let path = self.index.dir_path(id);
         let is_dir = n.flags & F_DIR != 0;
-        let size = if is_dir {
-            String::from("<dir>")
+        let size = human_size(self.index.recursive_size(id));
+        let date = if n.mtime > 0 {
+            crate::time::stamp_local(n.mtime)
         } else {
-            human_size(n.size)
+            String::from("-")
         };
-        let date = crate::time::stamp_local(n.mtime);
         (name, path, size, date, is_dir)
     }
 
@@ -151,23 +207,44 @@ impl GuiApp {
         let _ = std::process::Command::new("explorer").arg(path).spawn();
     }
 
+    /// Ancho de las columnas fijas, medidas desde la derecha. Así ningún
+    /// encabezado puede pisarse por más que la ventana se achique.
+    const W_SIZE: f32 = 86.0;
+    const W_PCT: f32 = 52.0;
+    const W_DATE: f32 = 122.0;
+
+    /// Columnas visibles: la ruta sólo cuando se está buscando.
+    fn show_path(&self) -> bool {
+        !self.query.trim().is_empty()
+    }
+
+    /// Corta un texto para que entre en `ancho` píxeles (≈6,4 px por carácter).
+    fn recorte(&self, texto: &str, ancho: f32) -> String {
+        let caben = ((ancho / 6.4).floor() as usize).max(4);
+        if texto.chars().count() <= caben {
+            return texto.to_string();
+        }
+        let corte: String = texto.chars().take(caben.saturating_sub(1)).collect();
+        format!("{corte}…")
+    }
+
     fn header(&self, ui: &mut egui::Ui) {
         let width = ui.available_width();
         let (rect, _) =
             ui.allocate_exact_size(Vec2::new(width, self.theme.row_h()), Sense::hover());
         ui.painter().rect_filled(rect, 0.0, self.theme.panel());
         let font = FontId::monospace(self.theme.font_header());
-        for (col, label) in [
-            (Column::Name, "Nombre"),
-            (Column::Path, "Carpeta"),
-            (Column::Size, "Tamaño"),
-            (Column::Modified, "Modificado"),
-        ] {
+        let mut cols = vec![
+            (Column::Name, "Nombre", Align2::LEFT_CENTER),
+            (Column::Size, "Tamaño", Align2::RIGHT_CENTER),
+            (Column::Percent, "%", Align2::RIGHT_CENTER),
+            (Column::Modified, "Modificado", Align2::RIGHT_CENTER),
+        ];
+        if self.show_path() {
+            cols.insert(1, (Column::Path, "Carpeta", Align2::LEFT_CENTER));
+        }
+        for (col, label, align) in cols {
             let r = self.column_rect(rect, col);
-            let align = match col {
-                Column::Size => Align2::RIGHT_CENTER,
-                _ => Align2::LEFT_CENTER,
-            };
             let x = match align {
                 Align2::RIGHT_CENTER => r.right(),
                 _ => r.left(),
@@ -183,25 +260,44 @@ impl GuiApp {
     }
 
     fn column_rect(&self, row: Rect, col: Column) -> Rect {
-        let w = row.width();
         let pad = 10.0;
+        let right = row.right() - pad;
+        let fecha = Rect::from_min_max(
+            egui::pos2(right - Self::W_DATE, row.top()),
+            egui::pos2(right, row.bottom()),
+        );
+        let pct = Rect::from_min_max(
+            egui::pos2(fecha.left() - Self::W_PCT, row.top()),
+            egui::pos2(fecha.left(), row.bottom()),
+        );
+        let tam = Rect::from_min_max(
+            egui::pos2(pct.left() - Self::W_SIZE, row.top()),
+            egui::pos2(pct.left(), row.bottom()),
+        );
+        let izq = row.left() + pad;
+        let fin_texto = if self.show_path() {
+            tam.left() - 40.0
+        } else {
+            tam.left()
+        };
+        let ancho = (fin_texto - izq).max(40.0);
+        let nombre = Rect::from_min_max(
+            egui::pos2(izq, row.top()),
+            egui::pos2(
+                izq + ancho * if self.show_path() { 0.40 } else { 1.0 },
+                row.bottom(),
+            ),
+        );
+        let carpeta = Rect::from_min_max(
+            egui::pos2(nombre.right() + 8.0, row.top()),
+            egui::pos2(fin_texto, row.bottom()),
+        );
         match col {
-            Column::Name => Rect::from_min_max(
-                row.left_top() + Vec2::new(pad, 0.0),
-                row.left_top() + Vec2::new(w * 0.40, row.height()),
-            ),
-            Column::Path => Rect::from_min_max(
-                row.left_top() + Vec2::new(w * 0.40 + pad, 0.0),
-                row.left_top() + Vec2::new(w * 0.72, row.height()),
-            ),
-            Column::Size => Rect::from_min_max(
-                row.left_top() + Vec2::new(w * 0.72, 0.0),
-                row.left_top() + Vec2::new(w * 0.835, row.height()),
-            ),
-            Column::Modified => Rect::from_min_max(
-                row.left_top() + Vec2::new(w * 0.84, 0.0),
-                row.right_top() - Vec2::new(pad, 0.0),
-            ),
+            Column::Name => nombre,
+            Column::Path => carpeta,
+            Column::Size => tam,
+            Column::Percent => pct,
+            Column::Modified => fecha,
         }
     }
 
@@ -237,21 +333,25 @@ impl GuiApp {
             let (name, path, size, date, is_dir) = self.human(id);
 
             let name_rect = self.column_rect(rect, Column::Name);
-            let icon = if is_dir { "[dir] " } else { "" };
+            let icon = if is_dir { "▸ " } else { "  " };
+            let visible = self.recorte(&format!("{icon}{name}"), name_rect.width());
             ui.painter().text(
                 egui::pos2(name_rect.left(), rect.center().y),
                 Align2::LEFT_CENTER,
-                format!("{icon}{name}"),
+                visible,
                 font_name.clone(),
                 if is_dir { theme.accent() } else { theme.text() },
             );
-            ui.painter().text(
-                egui::pos2(self.column_rect(rect, Column::Path).left(), rect.center().y),
-                Align2::LEFT_CENTER,
-                path.as_str(),
-                font_small.clone(),
-                theme.muted(),
-            );
+            if self.show_path() {
+                let ruta_rect = self.column_rect(rect, Column::Path);
+                ui.painter().text(
+                    egui::pos2(ruta_rect.left(), rect.center().y),
+                    Align2::LEFT_CENTER,
+                    self.recorte(&path, ruta_rect.width()),
+                    font_small.clone(),
+                    theme.muted(),
+                );
+            }
             ui.painter().text(
                 egui::pos2(
                     self.column_rect(rect, Column::Size).right(),
@@ -262,6 +362,18 @@ impl GuiApp {
                 font_small.clone(),
                 theme.muted(),
             );
+            if let Some(pct) = self.percent_of(id) {
+                ui.painter().text(
+                    egui::pos2(
+                        self.column_rect(rect, Column::Percent).right(),
+                        rect.center().y,
+                    ),
+                    Align2::RIGHT_CENTER,
+                    format!("{pct:.1}%"),
+                    font_small.clone(),
+                    theme.muted(),
+                );
+            }
             ui.painter().text(
                 egui::pos2(
                     self.column_rect(rect, Column::Modified).right(),
@@ -321,6 +433,22 @@ impl GuiApp {
                     };
                     ui.label(RichText::new(what).size(theme.font_small()).color(theme.muted()));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let ahora = crate::time::now();
+                        let etiqueta = self.pause.label(ahora);
+                        if ui
+                            .button(etiqueta)
+                            .on_hover_text(
+                                "Frena el indexado de fondo y lo retoma a la noche; las consultas siguen andando.",
+                            )
+                            .clicked()
+                        {
+                            if self.pause.active(ahora) {
+                                let _ = crate::pause::resume();
+                            } else {
+                                let _ = crate::pause::pause_until(crate::pause::until_local(22, 0));
+                            }
+                            self.pause = crate::pause::current();
+                        }
                         let ai_label = if self.ai_mode { "IA: sí" } else { "IA: no" };
                         if ui
                             .button(ai_label)
@@ -350,15 +478,12 @@ impl GuiApp {
                             self.theme = theme.next();
                             save_theme(self.theme);
                         }
-                        let sort_label = match self.sort {
-                            Sort::NameAsc => "Nombre A-Z",
-                            Sort::NameDesc => "Nombre Z-A",
-                        };
-                        if ui.button(sort_label).on_hover_text("Invertir el orden").clicked() {
-                            self.sort = match self.sort {
-                                Sort::NameAsc => Sort::NameDesc,
-                                Sort::NameDesc => Sort::NameAsc,
-                            };
+                        if ui
+                            .button(self.sort.label())
+                            .on_hover_text("Nombre → tamaño → fecha → ruta")
+                            .clicked()
+                        {
+                            self.sort = self.sort.next();
                             self.applied_query.clear();
                         }
                     });
@@ -659,30 +784,143 @@ impl GuiApp {
         }
     }
 
+    fn side_panel(&mut self, ctx: &egui::Context) {
+        if self.ai_mode {
+            return;
+        }
+        let theme = self.theme;
+        egui::SidePanel::right("census_side")
+            .resizable(false)
+            .exact_width(226.0)
+            .frame(
+                egui::Frame::NONE
+                    .fill(theme.panel())
+                    .inner_margin(egui::Margin::symmetric(12, 10)),
+            )
+            .show(ctx, |ui| {
+                ui.label(
+                    RichText::new("RESUMEN")
+                        .size(theme.font_header())
+                        .color(theme.muted())
+                        .strong(),
+                );
+                ui.add_space(6.0);
+                let fila = |ui: &mut egui::Ui, k: &str, v: String| {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(k)
+                                .size(theme.font_small())
+                                .color(theme.muted()),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(
+                                RichText::new(v)
+                                    .size(theme.font_small())
+                                    .color(theme.text()),
+                            );
+                        });
+                    });
+                };
+                fila(ui, "resultados", format!("{}", self.ids.len()));
+                fila(ui, "archivos", format!("{}", self.n_files));
+                fila(ui, "carpetas", format!("{}", self.n_dirs));
+                fila(ui, "tamaño", human_size(self.sum_size));
+                if !self.query.trim().is_empty() {
+                    fila(ui, "consulta", format!("{:.0} ms", self.elapsed_ms));
+                }
+                if self.types.is_empty() {
+                    return;
+                }
+                ui.add_space(12.0);
+                ui.separator();
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new("TIPOS")
+                        .size(theme.font_header())
+                        .color(theme.muted())
+                        .strong(),
+                );
+                ui.add_space(6.0);
+                let mayor = self.types.first().map(|(_, b, _)| *b).unwrap_or(0).max(1);
+                for (ext, bytes, count) in &self.types {
+                    let share = *bytes as f32 / mayor as f32;
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(ext)
+                                .size(theme.font_small())
+                                .color(theme.text()),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(
+                                RichText::new(human_size(*bytes))
+                                    .size(theme.font_small() - 0.5)
+                                    .color(theme.muted()),
+                            );
+                        });
+                    });
+                    let (rect, _) = ui
+                        .allocate_exact_size(egui::vec2(ui.available_width(), 5.0), Sense::hover());
+                    ui.painter().rect_filled(rect, 2.5, theme.row_alt());
+                    let mut llena = rect;
+                    llena.set_width(rect.width() * share);
+                    ui.painter().rect_filled(llena, 2.5, theme.accent());
+                    ui.label(
+                        RichText::new(format!("{count}"))
+                            .size(theme.font_small() - 2.5)
+                            .color(theme.muted()),
+                    );
+                    ui.add_space(2.0);
+                }
+            });
+    }
+
     fn status_bar(&mut self, ctx: &egui::Context) {
         let theme = self.theme;
         egui::TopBottomPanel::bottom("census_status")
-            .frame(egui::Frame::NONE.fill(theme.panel()).inner_margin(egui::Margin::symmetric(12, 6)))
+            .frame(
+                egui::Frame::NONE
+                    .fill(theme.panel())
+                    .inner_margin(egui::Margin::symmetric(12, 6)),
+            )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     let count = self.ids.len();
                     let text = if self.query.trim().is_empty() && !self.ai_mode {
-                        format!("{} archivos y carpetas listos · escribi para buscar", self.index.len())
+                        format!("{} archivos y carpetas indexados · listo", self.index.len())
                     } else if self.truncated {
-                        format!("{count} resultados (tope {CAP}) en {:.0} ms", self.elapsed_ms)
+                        format!(
+                            "{count} resultados (tope {CAP}) en {:.0} ms",
+                            self.elapsed_ms
+                        )
                     } else {
                         format!("{count} resultados en {:.0} ms", self.elapsed_ms)
                     };
-                    ui.label(RichText::new(text).size(theme.font_status()).color(theme.text()));
+                    ui.label(
+                        RichText::new(text)
+                            .size(theme.font_status())
+                            .color(theme.text()),
+                    );
+                    if self.pause.active(crate::time::now()) {
+                        ui.label(
+                            RichText::new(self.pause.label(crate::time::now()))
+                                .size(theme.font_status())
+                                .color(theme.accent()),
+                        );
+                    }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let nodes = self.index.len();
-                        let ram = (nodes * std::mem::size_of::<crate::Node>() + self.index.names.len() * 2) as f64
+                        let ram = (nodes * std::mem::size_of::<crate::Node>()
+                            + self.index.names.len() * 2) as f64
                             / (1024.0 * 1024.0);
                         ui.label(
                             RichText::new(format!(
-                                "{} {} · {nodes} nodos · {ram:.0} MB · Ctrl+C copia la ruta · Enter abre",
+                                "{} {} · {nodes} nodos · {ram:.0} MB · Ctrl+C / Enter",
                                 self.index.roots.len(),
-                                if self.index.roots.len() == 1 { "unidad" } else { "unidades" }
+                                if self.index.roots.len() == 1 {
+                                    "unidad"
+                                } else {
+                                    "unidades"
+                                }
                             ))
                             .size(theme.font_status())
                             .color(theme.muted()),
@@ -742,6 +980,7 @@ impl eframe::App for GuiApp {
                 self.truncated = false;
                 self.elapsed_ms = 0.0;
                 self.selected = None;
+                self.summarize();
             } else {
                 self.refresh();
             }
@@ -749,6 +988,9 @@ impl eframe::App for GuiApp {
 
         self.top_bar(ctx);
         self.status_bar(ctx);
+        if !self.ids.is_empty() {
+            self.side_panel(ctx);
+        }
 
         egui::CentralPanel::default()
             .frame(
@@ -759,11 +1001,31 @@ impl eframe::App for GuiApp {
             .show(ctx, |ui| {
                 if self.ai_mode {
                     self.ai_panel(ui);
-                } else if self.query.trim().is_empty() {
-                    welcome(ui, &self.index, self.theme);
                 } else {
-                    self.header(ui);
-                    self.rows(ui);
+                    if self.ids.is_empty() {
+                        // Como Everything: la ventana queda en blanco hasta que
+                        // el usuario escriba.
+                        ui.add_space(48.0);
+                        ui.vertical_centered(|ui| {
+                            ui.label(
+                                RichText::new(format!(
+                                    "{} archivos y carpetas indexados",
+                                    self.index.len()
+                                ))
+                                .size(self.theme.font_name())
+                                .color(self.theme.muted()),
+                            );
+                        });
+                    } else {
+                        ui.label(
+                            RichText::new(format!("resultados de «{}»", self.query.trim()))
+                                .size(self.theme.font_small())
+                                .color(self.theme.muted()),
+                        );
+                        ui.add_space(2.0);
+                        self.header(ui);
+                        self.rows(ui);
+                    }
                 }
             });
 
@@ -776,46 +1038,6 @@ impl eframe::App for GuiApp {
             }
         }
     }
-}
-
-fn welcome(ui: &mut egui::Ui, index: &Index, theme: Theme) {
-    ui.add_space(40.0);
-    ui.vertical_centered(|ui| {
-        ui.label(
-            RichText::new("Escribí para buscar")
-                .size(theme.font_title() + 3.0)
-                .color(theme.text()),
-        );
-        ui.add_space(6.0);
-        ui.label(
-            RichText::new(format!(
-                "{} archivos y {} carpetas indexados en el volumen {}",
-                index.stats.files, index.stats.dirs, index.letter
-            ))
-            .size(12.5)
-            .color(theme.muted()),
-        );
-        ui.add_space(18.0);
-        for (q, what) in [
-            ("path:\"C:\\Users\" file: ext:pdf", "Los PDF de una carpeta"),
-            ("file: dm:today", "Lo modificado hoy"),
-            ("file: size:>100mb", "Archivos de más de 100 MB"),
-            ("rc:>=2026-01-01T00:00:00", "Lo cambiado en el último año"),
-        ] {
-            ui.label(
-                RichText::new(q)
-                    .monospace()
-                    .size(12.0)
-                    .color(theme.accent()),
-            );
-            ui.label(
-                RichText::new(what)
-                    .size(theme.font_small())
-                    .color(theme.muted()),
-            );
-            ui.add_space(8.0);
-        }
-    });
 }
 
 /// Abre la ventana. Con `smoke` abre y se cierra solo (chequeo de arranque).
@@ -858,6 +1080,7 @@ mod tests {
     #[test]
     fn columns_do_not_overlap() {
         let app_like = GuiApp {
+            pause: crate::pause::Pause::default(),
             index: Arc::new(Index::default()),
             query: String::new(),
             applied_query: String::new(),
@@ -883,6 +1106,10 @@ mod tests {
             ai_question: String::new(),
             key_dialog: false,
             key_input: String::new(),
+            sum_size: 0,
+            n_files: 0,
+            n_dirs: 0,
+            types: Vec::new(),
         };
         let row = Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::new(1000.0, Theme::Dark.row_h()));
         let name = app_like.column_rect(row, Column::Name);

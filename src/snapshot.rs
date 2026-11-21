@@ -499,7 +499,7 @@ pub fn load(path: &Path) -> Result<Index, LoadError> {
         return Err(LoadError::Checksum);
     }
 
-    Ok(Index {
+    let mut ix = Index {
         letter,
         root: roots.first().copied().unwrap_or(0),
         roots,
@@ -507,7 +507,10 @@ pub fn load(path: &Path) -> Result<Index, LoadError> {
         names,
         stats,
         built_at,
-    })
+        dir_bytes: Vec::new(),
+    };
+    ix.compute_dir_bytes();
+    Ok(ix)
 }
 
 // -------------------------------------------------------------- rutas
