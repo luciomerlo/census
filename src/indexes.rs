@@ -51,9 +51,11 @@ impl Index {
         let mut tam = vec![1u32; n];
         for pos in (0..euler.len()).rev() {
             let id = euler[pos] as usize;
-            let hijos: Vec<u32> = self.children_of(euler[pos]).to_vec();
+            let i = euler[pos] as usize;
+            let desde = self.hijos_inicio.get(i).copied().unwrap_or(0) as usize;
+            let hasta = self.hijos_inicio.get(i + 1).copied().unwrap_or(0) as usize;
             let mut suma = 1u32;
-            for h in hijos {
+            for &h in &self.hijos[desde..hasta] {
                 suma = suma.saturating_add(tam[h as usize]);
             }
             tam[id] = suma;
@@ -116,16 +118,80 @@ impl Index {
         self.hijos = hijos;
     }
 
+    /// Ordena los ids por nombre en paralelo: cada hilo ordena su bloque y
+    /// después se fusionan. Ordenar 1,8 M de nombres en un solo hilo costaba
+    /// ~600 ms de los ~1 s de carga.
     fn build_name_order(&mut self) {
         let n = self.nodes.len();
-        let mut orden: Vec<u32> = (0..n as u32).collect();
-        orden.sort_unstable_by(|a, b| self.name_folded(*a).cmp(self.name_folded(*b)));
+        if n == 0 {
+            self.por_nombre.clear();
+            self.rango.clear();
+            return;
+        }
+        let hilos = std::thread::available_parallelism()
+            .map(|v| v.get())
+            .unwrap_or(4)
+            .clamp(1, 16);
+        let bloque = n.div_ceil(hilos);
+        let mut partes: Vec<Vec<u32>> = Vec::with_capacity(hilos);
+        std::thread::scope(|s| {
+            let mut handles = Vec::with_capacity(hilos);
+            for k in 0..hilos {
+                let ini = k * bloque;
+                let fin = ((k + 1) * bloque).min(n);
+                if ini >= fin {
+                    break;
+                }
+                let yo = &*self;
+                handles.push(s.spawn(move || {
+                    let mut trozo: Vec<u32> = (ini as u32..fin as u32).collect();
+                    trozo.sort_unstable_by(|a, b| yo.name_folded(*a).cmp(yo.name_folded(*b)));
+                    trozo
+                }));
+            }
+            for h in handles {
+                if let Ok(v) = h.join() {
+                    partes.push(v);
+                }
+            }
+        });
+        // Fusión por pares hasta quedarse con una sola lista.
+        while partes.len() > 1 {
+            let mut siguiente: Vec<Vec<u32>> = Vec::with_capacity(partes.len() / 2 + 1);
+            let mut it = partes.into_iter();
+            while let Some(a) = it.next() {
+                match it.next() {
+                    Some(b) => siguiente.push(self.fusionar(a, b)),
+                    None => siguiente.push(a),
+                }
+            }
+            partes = siguiente;
+        }
+        let orden = partes.pop().unwrap_or_default();
         let mut rango = vec![0u32; n];
         for (pos, id) in orden.iter().enumerate() {
             rango[*id as usize] = pos as u32;
         }
         self.por_nombre = orden;
         self.rango = rango;
+    }
+
+    /// Fusión de dos listas ya ordenadas por nombre.
+    fn fusionar(&self, a: Vec<u32>, b: Vec<u32>) -> Vec<u32> {
+        let mut out = Vec::with_capacity(a.len() + b.len());
+        let (mut i, mut j) = (0usize, 0usize);
+        while i < a.len() && j < b.len() {
+            if self.name_folded(a[i]) <= self.name_folded(b[j]) {
+                out.push(a[i]);
+                i += 1;
+            } else {
+                out.push(b[j]);
+                j += 1;
+            }
+        }
+        out.extend_from_slice(&a[i..]);
+        out.extend_from_slice(&b[j..]);
+        out
     }
 
     /// Hijos directos de una carpeta, en el orden en que están en el índice.
