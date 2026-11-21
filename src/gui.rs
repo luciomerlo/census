@@ -225,10 +225,27 @@ impl GuiApp {
         (name, path, size, date, is_dir)
     }
 
-    fn open_selected(&self) {
-        let Some(id) = self.selected else { return };
+    /// Abre el archivo (o la carpeta) con la aplicación por defecto.
+    fn abrir(&self, id: u32) {
         let path = self.index.full_path(id);
         let _ = std::process::Command::new("explorer").arg(path).spawn();
+    }
+
+    /// Abre el Explorador con el archivo seleccionado dentro de su carpeta.
+    fn explorar(&self, id: u32) {
+        let path = self.index.full_path(id);
+        let _ = std::process::Command::new("explorer")
+            .arg(format!("/select,{path}"))
+            .spawn();
+    }
+
+    fn seleccionar(&mut self, id: u32) {
+        self.selected = Some(id);
+    }
+
+    fn open_selected(&self) {
+        let Some(id) = self.selected else { return };
+        self.abrir(id);
     }
 
     /// Ancho de las columnas fijas, medidas desde la derecha. Así ningún
@@ -331,6 +348,8 @@ impl GuiApp {
         let selected = self.selected;
         let mut clicked: Option<u32> = None;
         let mut opened: Option<u32> = None;
+        let mut abrir: Option<u32> = None;
+        let mut explorar: Option<u32> = None;
         let mut copy: Option<String> = None;
 
         let row_h = self.theme.row_h();
@@ -418,6 +437,27 @@ impl GuiApp {
             if resp.double_clicked() {
                 opened = Some(id);
             }
+            // Clic derecho: leer el resultado, nunca modificar el archivo.
+            let ruta = self.index.full_path(id);
+            let nombre = self.index.name_string(id);
+            resp.context_menu(|ui| {
+                if ui.button("Abrir").clicked() {
+                    abrir = Some(id);
+                    ui.close_menu();
+                }
+                if ui.button("Copiar ruta completa").clicked() {
+                    copy = Some(ruta.clone());
+                    ui.close_menu();
+                }
+                if ui.button("Copiar nombre").clicked() {
+                    copy = Some(nombre.clone());
+                    ui.close_menu();
+                }
+                if ui.button("Explorar carpeta").clicked() {
+                    explorar = Some(id);
+                    ui.close_menu();
+                }
+            });
         };
 
         egui::ScrollArea::vertical()
@@ -435,6 +475,14 @@ impl GuiApp {
             if let Some(path) = copy {
                 ui.ctx().copy_text(path);
             }
+        }
+        if let Some(id) = abrir {
+            self.selected = Some(id);
+            self.abrir(id);
+        }
+        if let Some(id) = explorar {
+            self.seleccionar(id);
+            self.explorar(id);
         }
         if opened.is_some() {
             self.selected = opened;

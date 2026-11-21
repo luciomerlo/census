@@ -518,13 +518,34 @@ impl Index {
     pub fn match_ids_split(&self, q: &Query, cap: usize) -> (Vec<u32>, usize) {
         let mut ids = self.scan(|id| self.passes_filters(q, id) && self.name_has_all(q, id));
         let cuantos = ids.len();
-        if ids.len() < cap {
-            let mut por_carpeta = self.scan(|id| {
-                self.passes_filters(q, id)
-                    && !self.name_has_all(q, id)
-                    && self.all_terms_match(q, id)
-            });
-            ids.append(&mut por_carpeta);
+        if ids.len() < cap && !q.terms.is_empty() {
+            // Fase 2: buscar el término en las carpetas. En vez de recorrer
+            // todo el índice caminando padres, se buscan las carpetas cuyo
+            // nombre coincide y se toman sus subárboles (rango en `euler`).
+            let mut candidatos: Vec<u32> = Vec::new();
+            for pos in 0..self.nodes.len() {
+                let id = pos as u32;
+                if !self.is_dir(id) {
+                    continue;
+                }
+                let nombre = self.name_folded(id);
+                if q.terms.iter().any(|t| contains_folded(nombre, t)) {
+                    candidatos.extend_from_slice(self.subtree(id));
+                }
+            }
+            candidatos.sort_unstable();
+            candidatos.dedup();
+            for id in candidatos {
+                if !self.passes_filters(q, id) || self.name_has_all(q, id) {
+                    continue;
+                }
+                if self.all_terms_match(q, id) {
+                    ids.push(id);
+                    if ids.len() >= cap {
+                        break;
+                    }
+                }
+            }
         }
         ids.truncate(cap);
         (ids, cuantos.min(cap))

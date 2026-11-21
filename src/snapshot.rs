@@ -514,6 +514,9 @@ pub fn load(path: &Path) -> Result<Index, LoadError> {
         hijos: Vec::new(),
         por_nombre: Vec::new(),
         rango: Vec::new(),
+        euler: Vec::new(),
+        tin: Vec::new(),
+        tout: Vec::new(),
     };
     ix.compute_dir_bytes();
     ix.compute_folded();

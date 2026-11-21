@@ -15,7 +15,75 @@ impl Index {
     /// índice; es la única parte que cuesta (un `sort` de 1,2 M de ids).
     pub fn rebuild_indexes(&mut self) {
         self.build_children();
+        self.build_euler();
         self.build_name_order();
+    }
+
+    /// Preorden y rango de subárbol de cada carpeta. Con esto, "todo lo que
+    /// cuelga de esta carpeta" es un rango contiguo de `euler`.
+    fn build_euler(&mut self) {
+        let n = self.nodes.len();
+        let mut tin = vec![u32::MAX; n];
+        let mut euler: Vec<u32> = Vec::with_capacity(n);
+        let roots = self.roots.clone();
+        for raiz in roots {
+            let mut pila = vec![raiz];
+            while let Some(id) = pila.pop() {
+                let i = id as usize;
+                if i >= n || tin[i] != u32::MAX {
+                    continue;
+                }
+                tin[i] = euler.len() as u32;
+                euler.push(id);
+                for &h in self.children_of(id) {
+                    pila.push(h);
+                }
+            }
+        }
+        // Nodos que no cuelgan de ninguna raíz (no debería pasar): al final.
+        for id in 0..n as u32 {
+            if tin[id as usize] == u32::MAX {
+                tin[id as usize] = euler.len() as u32;
+                euler.push(id);
+            }
+        }
+        // Tamaño de cada subárbol recorriendo el preorden al revés.
+        let mut tam = vec![1u32; n];
+        for pos in (0..euler.len()).rev() {
+            let id = euler[pos] as usize;
+            let hijos: Vec<u32> = self.children_of(euler[pos]).to_vec();
+            let mut suma = 1u32;
+            for h in hijos {
+                suma = suma.saturating_add(tam[h as usize]);
+            }
+            tam[id] = suma;
+        }
+        let tout: Vec<u32> = tin
+            .iter()
+            .enumerate()
+            .map(|(i, t)| {
+                if *t == u32::MAX {
+                    0
+                } else {
+                    (*t).saturating_add(tam[i]).min(euler.len() as u32)
+                }
+            })
+            .collect();
+        self.euler = euler;
+        self.tin = tin;
+        self.tout = tout;
+    }
+
+    /// Ids de la carpeta y todo lo que cuelga de ella.
+    pub fn subtree(&self, id: u32) -> &[u32] {
+        let i = id as usize;
+        let (Some(&a), Some(&b)) = (self.tin.get(i), self.tout.get(i)) else {
+            return &[];
+        };
+        if a == u32::MAX || b < a {
+            return &[];
+        }
+        self.euler.get(a as usize..b as usize).unwrap_or(&[])
     }
 
     fn build_children(&mut self) {

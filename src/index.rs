@@ -57,6 +57,12 @@ pub struct Index {
     /// Ids ordenados por nombre plegado, y la posición de cada id en ese orden.
     pub por_nombre: Vec<u32>,
     pub rango: Vec<u32>,
+    /// Recorrido en preorden (ids) y rango de cada subárbol: los descendientes
+    /// de `id` son `euler[tin[id]..tout[id]]`. Es lo que permite buscar por
+    /// carpeta sin recorrer el índice entero.
+    pub euler: Vec<u32>,
+    pub tin: Vec<u32>,
+    pub tout: Vec<u32>,
 }
 
 pub struct Builder {
@@ -173,6 +179,9 @@ impl Builder {
             hijos: Vec::new(),
             por_nombre: Vec::new(),
             rango: Vec::new(),
+            euler: Vec::new(),
+            tin: Vec::new(),
+            tout: Vec::new(),
         };
         ix.compute_dir_bytes();
         ix.compute_folded();
@@ -366,6 +375,9 @@ impl Index {
             hijos: Vec::new(),
             por_nombre: Vec::new(),
             rango: Vec::new(),
+            euler: Vec::new(),
+            tin: Vec::new(),
+            tout: Vec::new(),
         };
         ix.compute_dir_bytes();
         ix.compute_folded();
