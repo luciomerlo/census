@@ -509,8 +509,10 @@ pub fn load(path: &Path) -> Result<Index, LoadError> {
         built_at,
         dir_bytes: Vec::new(),
         vol_serials: Vec::new(),
+        folded: Vec::new(),
     };
     ix.compute_dir_bytes();
+    ix.compute_folded();
     Ok(ix)
 }
 

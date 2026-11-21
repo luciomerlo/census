@@ -48,6 +48,8 @@ impl Service {
         let ids = match cached {
             Some(v) => v,
             None => {
+                // El servicio atiende IPC y MCP: acepta los operadores que
+                // mandan Wiz y Sort. La ventana usa `query::parse_simple`.
                 let q = query::parse(raw, &self.index);
                 let mut ids = self.index.match_ids(&q);
                 self.index.sort_ids(&mut ids, sort);

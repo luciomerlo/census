@@ -6,7 +6,6 @@ mod dirsize;
 pub mod gui;
 pub mod index;
 pub mod mcp;
-pub mod pause;
 pub mod query;
 pub mod service;
 pub mod snapshot;

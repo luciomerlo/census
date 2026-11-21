@@ -222,3 +222,58 @@ pub fn enable_raw_volume_access() -> (bool, bool) {
     let manage = enable_privilege("SeManageVolumePrivilege");
     (backup, manage)
 }
+
+/// ¿El proceso corre con token elevado? (lectura de la MFT.)
+pub fn is_elevated() -> bool {
+    use windows_sys::Win32::Security::{
+        GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
+    };
+    unsafe {
+        let mut token: HANDLE = std::ptr::null_mut();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+            return false;
+        }
+        let mut elev = TOKEN_ELEVATION { TokenIsElevated: 0 };
+        let mut devuelto = 0u32;
+        let ok = GetTokenInformation(
+            token,
+            TokenElevation,
+            &mut elev as *mut _ as *mut std::ffi::c_void,
+            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+            &mut devuelto,
+        );
+        CloseHandle(token);
+        ok != 0 && elev.TokenIsElevated != 0
+    }
+}
+
+/// Relanza este ejecutable elevado (UAC) conservando los argumentos.
+/// Devuelve `true` si el nuevo proceso arrancó.
+pub fn relaunch_elevated(args: &[String]) -> bool {
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    let Ok(exe) = std::env::current_exe() else {
+        return false;
+    };
+    let exe: Vec<u16> = exe
+        .to_string_lossy()
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    let verbo: Vec<u16> = "runas ".encode_utf16().collect();
+    let params = args.join(" ");
+    let params: Vec<u16> = params.encode_utf16().chain(std::iter::once(0)).collect();
+    let r = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            verbo.as_ptr(),
+            exe.as_ptr(),
+            params.as_ptr(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+    // ShellExecuteW devuelve un HINSTANCE > 32 cuando salió bien.
+    r as isize > 32
+}

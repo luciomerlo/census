@@ -1,6 +1,6 @@
 //! Parseo y evaluación de las consultas que consumen las apps.
 
-use crate::index::{contains_ignore_case, fold, to_units_lower, Index, F_DIR};
+use crate::index::{fold, to_units_lower, Index, F_DIR};
 
 /// Orden de los resultados. Los números coinciden con los del protocolo de
 /// Everything (1..8), que es lo que piden las apps.
@@ -227,6 +227,58 @@ fn parse_size(s: &str) -> Option<(Cmp, u64)> {
 }
 
 /// Interpreta la consulta contra un índice (para resolver `path:`).
+/// Búsqueda de la ventana: **sólo fragmentos**, como busca Everything.
+///
+/// Cada palabra se busca como subcadena en el nombre del archivo o en alguna
+/// carpeta de su ruta. No hay operadores: si alguien escribe `ext:pdf` o
+/// `path:C:`, se busca ese texto tal cual. Los `*` y `?` se ignoran porque la
+/// gente escribe `*.mp3` esperando los mp3, no un comodín.
+pub fn parse_simple(raw: &str) -> Query {
+    let mut q = Query {
+        raw: raw.to_string(),
+        ..Default::default()
+    };
+    for token in tokenize(raw) {
+        let limpio: String = token.chars().filter(|c| *c != '*' && *c != '?').collect();
+        let limpio = limpio.trim().trim_matches('"').trim();
+        if limpio.is_empty() {
+            continue;
+        }
+        q.terms.push(to_units_lower(limpio));
+    }
+    q
+}
+
+/// ¿El arena plegado contiene el término? Comparación directa, sin plegar.
+fn contains_folded(haystack: &[u16], needle: &[u16]) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    if needle.len() > haystack.len() {
+        return false;
+    }
+    let primero = needle[0];
+    let ultimo = haystack.len() - needle.len();
+    let mut i = 0usize;
+    while i <= ultimo {
+        // Salto rápido hasta el primer carácter del término.
+        if haystack[i] != primero {
+            match haystack[i + 1..=ultimo].iter().position(|u| *u == primero) {
+                Some(salto) => {
+                    i += salto + 1;
+                    continue;
+                }
+                None => return false,
+            }
+        }
+        if haystack[i..i + needle.len()] == *needle {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
 pub fn parse(raw: &str, ix: &Index) -> Query {
     let mut q = Query {
         raw: raw.to_string(),
@@ -316,7 +368,9 @@ pub fn parse(raw: &str, ix: &Index) -> Query {
 }
 
 impl Index {
-    fn matches(&self, q: &Query, id: u32) -> bool {
+    /// Filtros de la consulta que no dependen de los términos (tipo, ruta,
+    /// fechas, tamaño, extensión).
+    fn passes_filters(&self, q: &Query, id: u32) -> bool {
         let node = &self.nodes[id as usize];
         let is_dir = node.flags & F_DIR != 0;
 
@@ -359,17 +413,8 @@ impl Index {
                 return false;
             }
         }
-        // Un término suelto se busca en el nombre y también en las carpetas
-        // que lo contienen, que es lo que espera quien escribe "windows temp".
-        // Sin comodines ni regex: es subcadena y nada más.
-        for t in &q.terms {
-            if !self.term_matches(id, t) {
-                return false;
-            }
-        }
         if !q.exts.is_empty() {
-            let name = self.name_utf16(id);
-            // Extensión = lo que sigue al último punto del nombre.
+            let name = self.name_folded(id);
             let mut dot = None;
             for (i, u) in name.iter().enumerate() {
                 if *u == '.' as u16 {
@@ -377,17 +422,29 @@ impl Index {
                 }
             }
             let Some(dot) = dot else { return false };
-            let ext: Vec<u16> = name[dot + 1..].iter().map(|u| fold(*u)).collect();
-            if ext.is_empty() || !q.exts.contains(&ext) {
+            if dot + 1 >= name.len() || !q.exts.iter().any(|e| e == &name[dot + 1..]) {
                 return false;
             }
         }
         true
     }
 
-    /// ¿El término aparece en el nombre o en alguna carpeta ancestro?
+    /// ¿Todos los términos aparecen en el nombre? Compara sobre el arena
+    /// plegado: no hay `fold()` en tiempo de consulta.
+    fn name_has_all(&self, q: &Query, id: u32) -> bool {
+        let name = self.name_folded(id);
+        q.terms.iter().all(|t| contains_folded(name, t))
+    }
+
+    /// ¿Todos los términos aparecen, cada uno en el nombre o en alguna carpeta
+    /// de la ruta? Un término puede estar en el nombre y otro en la carpeta.
+    fn all_terms_match(&self, q: &Query, id: u32) -> bool {
+        q.terms.iter().all(|t| self.term_matches(id, t))
+    }
+
+    /// ¿El término está en el nombre o en alguna carpeta ancestro?
     fn term_matches(&self, id: u32, term: &[u16]) -> bool {
-        if contains_ignore_case(self.name_utf16(id), term) {
+        if contains_folded(self.name_folded(id), term) {
             return true;
         }
         let mut cur = id;
@@ -396,7 +453,7 @@ impl Index {
             if p == cur {
                 break;
             }
-            if contains_ignore_case(self.name_utf16(p), term) {
+            if contains_folded(self.name_folded(p), term) {
                 return true;
             }
             cur = p;
@@ -404,24 +461,83 @@ impl Index {
         false
     }
 
+    /// Recorre el índice en paralelo y devuelve los ids que cumplen `f`, en
+    /// orden de índice. Trocear por bloques contiguos mantiene el orden.
+    fn scan<F>(&self, f: F) -> Vec<u32>
+    where
+        F: Fn(u32) -> bool + Sync,
+    {
+        let total = self.nodes.len();
+        if total == 0 {
+            return Vec::new();
+        }
+        let hilos = std::thread::available_parallelism()
+            .map(|v| v.get())
+            .unwrap_or(4)
+            .clamp(1, 16);
+        let bloque = total.div_ceil(hilos);
+        let mut partes: Vec<Vec<u32>> = Vec::with_capacity(hilos);
+        std::thread::scope(|s| {
+            let mut handles = Vec::with_capacity(hilos);
+            for k in 0..hilos {
+                let ini = (k * bloque) as u32;
+                let fin = (((k + 1) * bloque) as u32).min(total as u32);
+                if ini >= fin {
+                    break;
+                }
+                let f = &f;
+                handles.push(s.spawn(move || {
+                    let mut out = Vec::new();
+                    for id in ini..fin {
+                        if f(id) {
+                            out.push(id);
+                        }
+                    }
+                    out
+                }));
+            }
+            for h in handles {
+                if let Ok(v) = h.join() {
+                    partes.push(v);
+                }
+            }
+        });
+        let mut out: Vec<u32> = Vec::with_capacity(partes.iter().map(Vec::len).sum());
+        for p in partes {
+            out.extend(p);
+        }
+        out
+    }
+
+    /// Resultados de una consulta, con los que coinciden por **nombre** al
+    /// principio.
+    ///
+    /// Dos fases, como Everything: primero el nombre (barato); la carpeta sólo
+    /// se mira si con el nombre no se llenó el tope. Ambas fases escanean en
+    /// paralelo y comparan sobre el arena plegado.
+    pub fn match_ids_split(&self, q: &Query, cap: usize) -> (Vec<u32>, usize) {
+        let mut ids = self.scan(|id| self.passes_filters(q, id) && self.name_has_all(q, id));
+        let cuantos = ids.len();
+        if ids.len() < cap {
+            let mut por_carpeta = self.scan(|id| {
+                self.passes_filters(q, id)
+                    && !self.name_has_all(q, id)
+                    && self.all_terms_match(q, id)
+            });
+            ids.append(&mut por_carpeta);
+        }
+        ids.truncate(cap);
+        (ids, cuantos.min(cap))
+    }
+
     /// Ids que cumplen la consulta, en orden de índice (sin ordenar).
     pub fn match_ids(&self, q: &Query) -> Vec<u32> {
         self.match_ids_capped(q, usize::MAX)
     }
 
-    /// Igual que [`Index::match_ids`] pero corta en `cap`. La ventana usa un
-    /// tope para no ordenar un millón y medio de filas en cada tecla.
+    /// Igual que [`Index::match_ids`] pero corta en `cap`.
     pub fn match_ids_capped(&self, q: &Query, cap: usize) -> Vec<u32> {
-        let mut out = Vec::with_capacity(cap.min(4096));
-        for id in 0..self.nodes.len() as u32 {
-            if self.matches(q, id) {
-                out.push(id);
-                if out.len() >= cap {
-                    break;
-                }
-            }
-        }
-        out
+        self.match_ids_split(q, cap).0
     }
 
     /// Compara dos nombres sin distinguir mayúsculas ni acentos.

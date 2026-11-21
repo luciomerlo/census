@@ -47,6 +47,9 @@ pub struct Index {
     pub dir_bytes: Vec<u64>,
     /// Número de serie del volumen de cada raíz (paralelo a `roots`).
     pub vol_serials: Vec<u64>,
+    /// Copia de `names` en minúsculas y sin acentos: buscar no vuelve a plegar
+    /// carácter por carácter en cada consulta.
+    pub folded: Vec<u16>,
 }
 
 pub struct Builder {
@@ -158,8 +161,10 @@ impl Builder {
             built_at: 0,
             dir_bytes: Vec::new(),
             vol_serials: Vec::new(),
+            folded: Vec::new(),
         };
         ix.compute_dir_bytes();
+        ix.compute_folded();
         ix
     }
 }
@@ -184,6 +189,21 @@ impl Index {
         let off = n.name_off as usize;
         let end = off.saturating_add(n.name_len as usize);
         self.names.get(off..end).unwrap_or(&[])
+    }
+
+    /// Nombre plegado (minúsculas, sin acentos) para comparar rápido.
+    pub fn name_folded(&self, id: u32) -> &[u16] {
+        let Some(n) = self.nodes.get(id as usize) else {
+            return &[];
+        };
+        let off = n.name_off as usize;
+        let end = off.saturating_add(n.name_len as usize);
+        self.folded.get(off..end).unwrap_or(&[])
+    }
+
+    /// Construye el arena plegado, con exactamente los mismos offsets.
+    pub fn compute_folded(&mut self) {
+        self.folded = self.names.iter().map(|u| fold(*u)).collect();
     }
 
     pub fn name_string(&self, id: u32) -> String {
@@ -329,8 +349,10 @@ impl Index {
             built_at,
             dir_bytes: Vec::new(),
             vol_serials: Vec::new(),
+            folded: Vec::new(),
         };
         ix.compute_dir_bytes();
+        ix.compute_folded();
         ix
     }
 

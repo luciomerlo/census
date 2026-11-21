@@ -65,8 +65,6 @@ pub struct GuiApp {
     n_files: usize,
     n_dirs: usize,
     types: Vec<(String, u64, usize)>,
-    /// Pausa del trabajo de fondo (indexado), persistida en disco.
-    pause: crate::pause::Pause,
 }
 
 fn settings_path() -> Option<PathBuf> {
@@ -130,16 +128,20 @@ impl GuiApp {
             n_files: 0,
             n_dirs: 0,
             types: Vec::new(),
-            pause: crate::pause::current(),
         }
     }
 
     fn refresh(&mut self) {
         let t0 = std::time::Instant::now();
-        let q = query::parse(&self.query, &self.index);
-        let mut ids = self.index.match_ids_capped(&q, CAP);
+        let q = query::parse_simple(&self.query);
+        let (mut ids, nombres) = self.index.match_ids_split(&q, CAP);
         self.truncated = ids.len() >= CAP;
-        self.index.sort_ids(&mut ids, self.sort);
+        // Los que coinciden por nombre primero, cada grupo ordenado igual.
+        let (mut por_nombre, mut por_carpeta) = (ids[..nombres].to_vec(), ids[nombres..].to_vec());
+        self.index.sort_ids(&mut por_nombre, self.sort);
+        self.index.sort_ids(&mut por_carpeta, self.sort);
+        por_nombre.extend(por_carpeta);
+        ids = por_nombre;
         self.elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
         self.ids = ids;
         self.selected = None;
@@ -421,38 +423,37 @@ impl GuiApp {
     fn top_bar(&mut self, ctx: &egui::Context) {
         let theme = self.theme;
         egui::TopBottomPanel::top("census_top")
-            .frame(egui::Frame::NONE.fill(theme.panel()).inner_margin(egui::Margin::symmetric(12, 10)))
+            .frame(
+                egui::Frame::NONE
+                    .fill(theme.panel())
+                    .inner_margin(egui::Margin::symmetric(12, 10)),
+            )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Census").size(theme.font_title()).strong().color(theme.accent()));
+                    ui.label(
+                        RichText::new("Census")
+                            .size(theme.font_title())
+                            .strong()
+                            .color(theme.accent()),
+                    );
                     let vols = self.index.roots.len();
                     let what = if vols == 1 {
                         format!("· unidad {}", self.index.name_string(self.index.root))
                     } else {
                         format!("· {vols} unidades")
                     };
-                    ui.label(RichText::new(what).size(theme.font_small()).color(theme.muted()));
+                    ui.label(
+                        RichText::new(what)
+                            .size(theme.font_small())
+                            .color(theme.muted()),
+                    );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let ahora = crate::time::now();
-                        let etiqueta = self.pause.label(ahora);
-                        if ui
-                            .button(etiqueta)
-                            .on_hover_text(
-                                "Frena el indexado de fondo y lo retoma a la noche; las consultas siguen andando.",
-                            )
-                            .clicked()
-                        {
-                            if self.pause.active(ahora) {
-                                let _ = crate::pause::resume();
-                            } else {
-                                let _ = crate::pause::pause_until(crate::pause::until_local(22, 0));
-                            }
-                            self.pause = crate::pause::current();
-                        }
                         let ai_label = if self.ai_mode { "IA: sí" } else { "IA: no" };
                         if ui
                             .button(ai_label)
-                            .on_hover_text("Preguntar en lenguaje natural (Groq + herramientas de Census)")
+                            .on_hover_text(
+                                "Preguntar en lenguaje natural (Groq + herramientas de Census)",
+                            )
                             .clicked()
                         {
                             self.ai_mode = !self.ai_mode;
@@ -462,9 +463,17 @@ impl GuiApp {
                             self.applied_query.clear();
                         }
                         let vols_on = self.index.roots.len();
+                        let marcadas = crate::volumes::selected().len();
+                        let etiqueta = if marcadas == vols_on {
+                            format!("Unidades: {vols_on}")
+                        } else {
+                            format!("Unidades: {vols_on}/{marcadas}")
+                        };
                         if ui
-                            .button(format!("Unidades: {vols_on}"))
-                            .on_hover_text("Que unidades indexa Census (igual que WizEverything)")
+                            .button(etiqueta)
+                            .on_hover_text(
+                                "Indexadas sobre las marcadas. La nube queda afuera: es streaming.",
+                            )
                             .clicked()
                         {
                             self.show_drives = !self.show_drives;
@@ -490,7 +499,7 @@ impl GuiApp {
                 });
                 ui.add_space(8.0);
                 let edit = egui::TextEdit::singleline(&mut self.query)
-                    .hint_text("path:\"C:\\Users\"  file:  ext:rs,toml  size:>10mb  dm:today  rc:>=2026-01-01T00:00:00")
+                    .hint_text("Escribí parte del nombre, la extensión o la carpeta")
                     .desired_width(f32::INFINITY)
                     .font(egui::TextStyle::Monospace)
                     .margin(egui::Margin::symmetric(10, 7));
@@ -886,27 +895,21 @@ impl GuiApp {
                 ui.horizontal(|ui| {
                     let count = self.ids.len();
                     let text = if self.query.trim().is_empty() && !self.ai_mode {
-                        format!("{} archivos y carpetas indexados · listo", self.index.len())
+                        format!("{} archivos y carpetas indexados", miles(self.index.len()))
                     } else if self.truncated {
                         format!(
-                            "{count} resultados (tope {CAP}) en {:.0} ms",
+                            "{} resultados (tope {CAP}) en {:.0} ms",
+                            miles(count),
                             self.elapsed_ms
                         )
                     } else {
-                        format!("{count} resultados en {:.0} ms", self.elapsed_ms)
+                        format!("{} resultados en {:.0} ms", miles(count), self.elapsed_ms)
                     };
                     ui.label(
                         RichText::new(text)
                             .size(theme.font_status())
                             .color(theme.text()),
                     );
-                    if self.pause.active(crate::time::now()) {
-                        ui.label(
-                            RichText::new(self.pause.label(crate::time::now()))
-                                .size(theme.font_status())
-                                .color(theme.accent()),
-                        );
-                    }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let nodes = self.index.len();
                         let ram = (nodes * std::mem::size_of::<crate::Node>()
@@ -929,6 +932,19 @@ impl GuiApp {
                 });
             });
     }
+}
+
+/// Número con separador de miles: `1233650` → `1.233.650`.
+fn miles(n: usize) -> String {
+    let texto = n.to_string();
+    let mut out = String::with_capacity(texto.len() + texto.len() / 3);
+    for (i, c) in texto.chars().enumerate() {
+        if i > 0 && (texto.len() - i).is_multiple_of(3) {
+            out.push('.');
+        }
+        out.push(c);
+    }
+    out
 }
 
 fn human_size(bytes: u64) -> String {
@@ -1010,7 +1026,7 @@ impl eframe::App for GuiApp {
                             ui.label(
                                 RichText::new(format!(
                                     "{} archivos y carpetas indexados",
-                                    self.index.len()
+                                    miles(self.index.len())
                                 ))
                                 .size(self.theme.font_name())
                                 .color(self.theme.muted()),
@@ -1041,6 +1057,18 @@ impl eframe::App for GuiApp {
 }
 
 /// Abre la ventana. Con `smoke` abre y se cierra solo (chequeo de arranque).
+/// Icono de la ventana y de la barra de tareas: la lupa ámbar con el índice.
+/// Los píxeles se generan del `icon-256.png` a RGBA crudo (`assets/icon-256.rgba`)
+/// para no sumar un decodificador de PNG al binario.
+fn icono() -> egui::IconData {
+    const LADO: u32 = 256;
+    egui::IconData {
+        rgba: include_bytes!("../assets/icon-256.rgba").to_vec(),
+        width: LADO,
+        height: LADO,
+    }
+}
+
 pub fn run(index: Arc<Index>, opts: GuiOptions) -> Result<(), String> {
     let title = format!("Census — volumen {}", index.letter);
     // Menos 80 px para el marco: la ventana tiene que entrar completa.
@@ -1052,7 +1080,8 @@ pub fn run(index: Arc<Index>, opts: GuiOptions) -> Result<(), String> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([w, h])
             .with_min_inner_size([720.0, 380.0])
-            .with_title(title),
+            .with_title(title)
+            .with_icon(icono()),
         ..Default::default()
     };
     eframe::run_native(
@@ -1080,7 +1109,6 @@ mod tests {
     #[test]
     fn columns_do_not_overlap() {
         let app_like = GuiApp {
-            pause: crate::pause::Pause::default(),
             index: Arc::new(Index::default()),
             query: String::new(),
             applied_query: String::new(),

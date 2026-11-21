@@ -87,8 +87,10 @@ impl Drive {
 
     /// Se puede indexar: tiene sistema de archivos y no es una unidad óptica
     /// sin disco. Todo lo demás entra, sea local, de red o de nube.
+    /// ¿Entra en el índice por defecto? La nube queda afuera: es streaming y
+    /// abrirla dispara descargas. Se enumera sólo con `--include-cloud`.
     pub fn is_indexable(&self) -> bool {
-        !self.fs.is_empty() && !matches!(self.base_kind, DriveKind::Cdrom)
+        !self.fs.is_empty() && !matches!(self.base_kind, DriveKind::Cdrom) && !self.is_cloud()
     }
 
     /// La MFT sólo existe en NTFS local; el resto va por recorrido.
@@ -334,6 +336,46 @@ pub fn exists(path: &Path) -> bool {
     path.exists()
 }
 
+/// Lee una clave de `%APPDATA%\Census\settings.ini`.
+pub fn get_setting(key: &str) -> Option<String> {
+    let texto = std::fs::read_to_string(census_settings_path()?).ok()?;
+    for line in texto.lines() {
+        let (k, v) = line.split_once('=')?;
+        if k.trim() == key {
+            return Some(v.trim().to_string());
+        }
+    }
+    None
+}
+
+/// Escribe (o reemplaza) una clave, conservando el resto del archivo.
+pub fn set_setting(key: &str, value: &str) -> std::io::Result<()> {
+    let path = census_settings_path()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no hay APPDATA"))?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let previo = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut lineas: Vec<String> = previo
+        .lines()
+        .filter(|l| {
+            l.split_once('=')
+                .map(|(k, _)| k.trim() != key)
+                .unwrap_or(true)
+        })
+        .map(String::from)
+        .collect();
+    lineas.push(format!("{key}={value}"));
+    std::fs::write(
+        &path,
+        lineas.join(
+            "
+",
+        ) + "
+",
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -367,14 +409,17 @@ mod tests {
         };
         assert!(d("C:", "NTFS", DriveKind::Fixed, "").is_ntfs());
         assert!(!d("E:", "exFAT", DriveKind::Removable, "").is_ntfs());
-        // La nube se deduce de la etiqueta y se indexa recorriendo carpetas.
+        // La nube se deduce de la etiqueta y **no** entra al índice por defecto.
         assert!(d("G:", "NTFS", DriveKind::Fixed, "Google Drive").is_cloud());
         assert_eq!(
             d("G:", "NTFS", DriveKind::Fixed, "Google Drive").kind(),
             DriveKind::Cloud
         );
         assert!(!d("G:", "NTFS", DriveKind::Fixed, "Google Drive").uses_mft());
-        assert!(d("G:", "NTFS", DriveKind::Fixed, "Google Drive").is_indexable());
+        assert!(
+            !d("G:", "NTFS", DriveKind::Fixed, "Google Drive").is_indexable(),
+            "la nube es streaming: no se indexa sola"
+        );
         // Red: entra en el índice, sin MFT.
         assert!(d("Z:", "NTFS", DriveKind::Remote, "").is_indexable());
         assert!(!d("Z:", "NTFS", DriveKind::Remote, "").uses_mft());
