@@ -530,6 +530,17 @@ impl Index {
         (ids, cuantos.min(cap))
     }
 
+    /// ¿Este id cumple la consulta? (filtros + todos los términos)
+    pub fn matches_query(&self, q: &Query, id: u32) -> bool {
+        self.passes_filters(q, id) && self.all_terms_match(q, id)
+    }
+
+    /// Filtra en el lugar una lista ya calculada. Lo usa la ventana para
+    /// angostar resultados al agregar letras, en vez de reescanear el índice.
+    pub fn keep_matching(&self, q: &Query, ids: &mut Vec<u32>) {
+        ids.retain(|&id| self.matches_query(q, id));
+    }
+
     /// Ids que cumplen la consulta, en orden de índice (sin ordenar).
     pub fn match_ids(&self, q: &Query) -> Vec<u32> {
         self.match_ids_capped(q, usize::MAX)

@@ -65,6 +65,10 @@ pub struct GuiApp {
     n_files: usize,
     n_dirs: usize,
     types: Vec<(String, u64, usize)>,
+    /// Última consulta y orden con los que se calculó `ids`, para angostar en
+    /// vez de reescanear cuando el usuario sigue tipeando.
+    ultima_busqueda: String,
+    ultimo_orden: Option<Sort>,
 }
 
 fn settings_path() -> Option<PathBuf> {
@@ -128,20 +132,38 @@ impl GuiApp {
             n_files: 0,
             n_dirs: 0,
             types: Vec::new(),
+            ultima_busqueda: String::new(),
+            ultimo_orden: None,
         }
     }
 
     fn refresh(&mut self) {
         let t0 = std::time::Instant::now();
         let q = query::parse_simple(&self.query);
-        let (mut ids, nombres) = self.index.match_ids_split(&q, CAP);
+        // Si la consulta sólo se alargó (misma raíz, mismo orden), se angosta
+        // lo que ya había: es lo mismo que hace Everything al tipear.
+        let incremental = !self.ultima_busqueda.is_empty()
+            && self.query.starts_with(&self.ultima_busqueda)
+            && self.ultimo_orden == Some(self.sort)
+            && self.ids.len() < CAP;
+        let ids = if incremental {
+            let mut ids = std::mem::take(&mut self.ids);
+            self.index.keep_matching(&q, &mut ids);
+            ids
+        } else {
+            let (mut ids, nombres) = self.index.match_ids_split(&q, CAP);
+            // Los que coinciden por nombre primero, cada grupo ordenado igual.
+            let (mut por_nombre, mut por_carpeta) =
+                (ids[..nombres].to_vec(), ids[nombres..].to_vec());
+            self.index.sort_ids(&mut por_nombre, self.sort);
+            self.index.sort_ids(&mut por_carpeta, self.sort);
+            por_nombre.extend(por_carpeta);
+            ids = por_nombre;
+            ids
+        };
         self.truncated = ids.len() >= CAP;
-        // Los que coinciden por nombre primero, cada grupo ordenado igual.
-        let (mut por_nombre, mut por_carpeta) = (ids[..nombres].to_vec(), ids[nombres..].to_vec());
-        self.index.sort_ids(&mut por_nombre, self.sort);
-        self.index.sort_ids(&mut por_carpeta, self.sort);
-        por_nombre.extend(por_carpeta);
-        ids = por_nombre;
+        self.ultima_busqueda = self.query.clone();
+        self.ultimo_orden = Some(self.sort);
         self.elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
         self.ids = ids;
         self.selected = None;
@@ -1109,6 +1131,8 @@ mod tests {
     #[test]
     fn columns_do_not_overlap() {
         let app_like = GuiApp {
+            ultima_busqueda: String::new(),
+            ultimo_orden: None,
             index: Arc::new(Index::default()),
             query: String::new(),
             applied_query: String::new(),
