@@ -21,7 +21,7 @@ Everything. Census existe porque esa idea —un índice que contiene todo— mer
 que otras apps puedan usar como base de datos.
 
 - **El icono**: una lupa ámbar con un índice de filas dentro, en guiño a su lupa
-  (`assets/icon.svg`, `assets/icon.ico` de 16/32/48/256). No es su icono ni está
+  (`assets/icon.svg`, `assets/icon.ico` con 16/32/48 en DIB y 256 en PNG). No es su icono ni está
   extraído de su binario.
 - **El nombre**: homenajea la idea, no la marca — la de un índice que contiene *todo*.
 - **Lo que no hacemos**: no usamos su nombre como nombre propio, ni su logo, ni su

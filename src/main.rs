@@ -18,6 +18,7 @@ Census - indice instantaneo de archivos (NTFS)
   census mcp    [--volume C] [--root <dir>]     servidor MCP por stdio para agentes
   census gui    [--volume C] [--root <dir>] [--theme dark|light|contrast] [--smoke]
   census drives  Unidades disponibles, su tipo y como se indexan
+  census probe   Diagnostico del IPC: ventana, capacidades y estado del servidor
   census ask <pregunta>   Lenguaje natural con Groq (usa las herramientas MCP)
   census key <clave>      Guarda la clave de Groq cifrada con DPAPI (--clear borra)
 
@@ -315,6 +316,56 @@ fn cmd_key(args: &Args) -> Result<(), String> {
     }
 }
 
+/// Diagnostico: ve la ventana IPC de un `census serve` en ejecucion.
+fn cmd_probe() -> Result<(), String> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::FindWindowW;
+    let wide = |s: &str| -> Vec<u16> { s.encode_utf16().chain(std::iter::once(0)).collect() };
+    for cls in [census_ipc::CLASS, census_ipc::COMPAT_CLASS] {
+        let name = wide(cls);
+        let h = unsafe { FindWindowW(name.as_ptr(), std::ptr::null()) };
+        println!("{cls}: hwnd = {h:p}");
+    }
+    let mut client = census_ipc::client::Client::new().map_err(|e| e.to_string())?;
+    println!("census_is_running: {}", client.census_is_running());
+    println!("is_ready: {}", client.is_ready());
+    // Capacidades (WM_USER+402) y que el reply anuncie solo lo que trae.
+    let caps = client.caps().unwrap_or(0);
+    println!(
+        "caps: 0x{caps:04x} (name={} path={} full={} size={} mtime={} atime={} attrs={} run_count={} parcial={})",
+        bit(caps, census_ipc::protocol::req::NAME),
+        bit(caps, census_ipc::protocol::req::PATH),
+        bit(caps, census_ipc::protocol::req::FULL_PATH),
+        bit(caps, census_ipc::protocol::req::SIZE),
+        bit(caps, census_ipc::protocol::req::DATE_MODIFIED),
+        bit(caps, census_ipc::protocol::req::DATE_ACCESSED),
+        bit(caps, census_ipc::protocol::req::ATTRIBUTES),
+        bit(caps, census_ipc::protocol::req::RUN_COUNT),
+        bit(caps, census_ipc::protocol::caps::PARTIAL_METADATA),
+    );
+    let asked = census_ipc::protocol::req::BASIC | census_ipc::protocol::req::RUN_COUNT;
+    match client.query_raw("", 1, 0, 1, asked) {
+        Some(raw) => {
+            let reply = census_ipc::protocol::parse_reply(&raw).ok_or("respuesta ilegible")?;
+            println!(
+                "query flags: pedidos=0x{asked:04x} devueltos=0x{:04x} (run_count incluido: {})",
+                reply.flags,
+                bit(reply.flags, census_ipc::protocol::req::RUN_COUNT)
+            );
+            println!("total: {}", reply.total);
+        }
+        None => println!("query: sin respuesta"),
+    }
+    Ok(())
+}
+
+fn bit(flags: u32, field: u32) -> &'static str {
+    if flags & field != 0 {
+        "si"
+    } else {
+        "no"
+    }
+}
+
 /// Que unidades ve Census, de que tipo son y como se indexarian.
 fn cmd_drives() -> Result<(), String> {
     let excluded = census::volumes::excluded_drives();
@@ -399,10 +450,14 @@ fn cmd_serve(args: &Args) -> Result<(), String> {
     if args.has("compat") {
         classes.push(census_ipc::COMPAT_CLASS);
     }
+    let letter = ix.letter;
     println!(
-        "Census sirviendo {} nodos. Clases: {}. Ctrl+C para salir.",
+        "Census sirviendo {} nodos de un volumen por servidor ({letter}:). Clases: {}. Ctrl+C para salir.",
         ix.len(),
         classes.join(", ")
+    );
+    println!(
+        "Metadatos: run_count no disponible (siempre 0); accessed puede venir vacio. Respuesta: flags = campos incluidos, y WM_USER+402 devuelve las capacidades."
     );
     let used = census_ipc::server::serve(service, &classes)?;
     println!("clase activa: {used}");
@@ -424,6 +479,7 @@ fn main() -> ExitCode {
         "mcp" => cmd_mcp(&rest()),
         "gui" => cmd_gui(&rest()),
         "drives" => cmd_drives(),
+        "probe" => cmd_probe(),
         "ask" => cmd_ask(&rest()),
         "key" => cmd_key(&rest()),
         "help" | "--help" | "-h" => {

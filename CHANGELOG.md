@@ -40,13 +40,18 @@ Primera versión que se puede usar de punta a punta.
   contraste verificado por test, tipografía Segoe UI + Segoe UI Symbol, tabla
   virtualizada, `Enter` abre, `Ctrl+C` copia la ruta, selector de unidades.
 - **Icono**: lupa ámbar con un índice de filas dentro, homenaje a la de Everything;
-  `assets/icon.svg`, `icon.ico` (16/32/48/64/256) y script `tools/make-icon.ps1`.
+  `assets/icon.svg`, `icon.ico` (16/32/48 en DIB + 256 en PNG) y script `tools/make-icon.ps1`.
 
 ### Cambiado
 - La ventana oculta la consola del binario al abrirse (`census gui`).
 - Las capturas se toman por PID y clase de ventana, no por `MainWindowHandle`.
 
 ### Corregido
+- El `.ico` guardaba los cuatro tamaños como PNG: Windows sólo acepta PNG de forma
+  confiable en 256×256, así que el Explorador podía mostrar el icono genérico. Ahora
+  16/32/48 van en DIB clásico y sólo 256 en PNG.
+- A 16 px el anillo y el mango finos desaparecían: trazos más gruesos y lente más clara
+  que el anillo en los tamaños chicos.
 - El tema oscuro era poco legible: texto y secundario ahora pasan WCAG AA/AAA.
 - `census mcp` mandaba las herramientas sin la clave `tools` al asistente de Groq.
 - `scan_dir` rotulaba la raíz como `C:` aunque indexara otra unidad.

@@ -4,7 +4,7 @@
 
 use std::sync::{Arc, Mutex, OnceLock};
 
-use crate::protocol::{self, ReplyItem, Request, IS_DB_LOADED};
+use crate::protocol::{self, ReplyItem, Request, CAPS, IS_DB_LOADED};
 
 /// Clase propia. Es la que busca el cliente de Census y el shim.
 pub const CLASS: &str = "CENSUS_IPC";
@@ -16,6 +16,11 @@ pub trait Searcher: Send + Sync + 'static {
     fn is_ready(&self) -> bool;
     /// Devuelve (total de coincidencias, página pedida).
     fn search(&self, search: &str, sort: u32, offset: u32, max: u32, flags: u32) -> (u32, Vec<ReplyItem>);
+    /// Campos que este motor completa de verdad (ver `protocol::caps`).
+    /// Por defecto, todos menos el historial de ejecución.
+    fn caps(&self) -> u32 {
+        protocol::caps::DEFAULT
+    }
 }
 
 #[cfg(windows)]
@@ -30,8 +35,14 @@ mod win {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         ChangeWindowMessageFilterEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
         GetMessageW, MSGFLT_ALLOW, PostQuitMessage, RegisterClassW, SendMessageW, TranslateMessage, MSG, WM_COPYDATA,
-        WM_DESTROY, WM_USER, WNDCLASSW,
+        WM_DESTROY, WM_USER, WNDCLASSW, WS_POPUP,
     };
+
+    /// Mensajes que un cliente de integridad media puede mandarle a un
+    /// `census serve` elevado. Si falta uno, UIPI lo bloquea con error 5 y la
+    /// app cree que Census no está corriendo.
+    pub const ALLOWED_FROM_LOWER_INTEGRITY: [u32; 3] =
+        [WM_COPYDATA, WM_USER + IS_DB_LOADED, WM_USER + CAPS];
 
     static SEARCHER: OnceLock<Mutex<Option<Arc<dyn Searcher>>>> = OnceLock::new();
 
@@ -64,16 +75,10 @@ mod win {
                 };
                 let reply = with_searcher(|s| {
                     let (total, items) = s.search(&req.search, req.sort, req.offset, req.max, req.flags);
-                    // Sólo se devuelven los campos que el motor sabe completar.
-                    let flags = req.flags
-                        & (protocol::req::NAME
-                            | protocol::req::PATH
-                            | protocol::req::FULL_PATH
-                            | protocol::req::SIZE
-                            | protocol::req::DATE_MODIFIED
-                            | protocol::req::DATE_ACCESSED
-                            | protocol::req::ATTRIBUTES
-                            | protocol::req::RUN_COUNT);
+                    // El `flags` de la respuesta dice qué campos vinieron de
+                    // verdad: si el cliente pidió `run_count` y no lo tenemos,
+                    // no se anuncia y no se escribe. Un cero no es un dato.
+                    let flags = protocol::caps::present(req.flags) & s.caps();
                     protocol::build_reply(total, req.offset, flags, &items)
                 });
                 let Some(data) = reply else {
@@ -98,6 +103,9 @@ mod win {
                 1
             }
             m if m == WM_USER + IS_DB_LOADED => with_searcher(|s| s.is_ready() as LRESULT).unwrap_or(0),
+            // Capacidades del motor: qué campos completa y si los metadatos son
+            // parciales. 0 = todavía no hay índice.
+            m if m == WM_USER + CAPS => with_searcher(|s| s.caps() as LRESULT).unwrap_or(0),
             WM_DESTROY => {
                 unsafe { PostQuitMessage(0) };
                 0
@@ -115,6 +123,9 @@ mod win {
         }
 
         let mut last_err = String::from("sin clases para registrar");
+        // Una ventana por clase pedida: `--compat` tiene que dejar disponibles
+        // CENSUS_IPC *y* la clase de Everything a la vez, no una u otra.
+        let mut hwnds: Vec<(String, HWND)> = Vec::new();
         for name in classes {
             let cls = wide(name);
             let wc = WNDCLASSW {
@@ -132,7 +143,7 @@ mod win {
             if unsafe { RegisterClassW(&wc) } == 0 {
                 let err = unsafe { GetLastError() } as i32;
                 if err == ERROR_CLASS_ALREADY_EXISTS as i32 {
-                    last_err = format!("la clase {name} ya está registrada por otro proceso");
+                    last_err = format!("la clase {name} ya está registrada en este proceso");
                     continue;
                 }
                 last_err = format!("RegisterClassW({name}) falló: {err}");
@@ -144,7 +155,7 @@ mod win {
                     0,
                     cls.as_ptr(),
                     cls.as_ptr(),
-                    0,
+                    WS_POPUP,
                     0,
                     0,
                     0,
@@ -164,31 +175,43 @@ mod win {
             // poder consultar un `census serve` elevado. Sin esto, UIPI bloquea
             // WM_COPYDATA y también WM_USER+IS_DB_LOADED, y el cliente concluye
             // "Census no está en ejecución" aunque el proceso esté vivo.
+            //
+            // Estos tres filtros no se sacan: sin ellos la integración con las
+            // apps (que corren sin elevación) deja de funcionar. Lo cubre
+            // `messages_a_medium_client_needs_are_filtered`.
             unsafe {
-                ChangeWindowMessageFilterEx(hwnd, WM_COPYDATA, MSGFLT_ALLOW, std::ptr::null_mut());
-                ChangeWindowMessageFilterEx(hwnd, WM_USER + IS_DB_LOADED, MSGFLT_ALLOW, std::ptr::null_mut());
-            }
-
-            let mut msg: MSG = unsafe { std::mem::zeroed() };
-            loop {
-                let r = unsafe { GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) };
-                if r == 0 || r == -1 {
-                    break;
-                }
-                unsafe {
-                    TranslateMessage(&msg);
-                    DispatchMessageW(&msg);
+                for msg in ALLOWED_FROM_LOWER_INTEGRITY {
+                    ChangeWindowMessageFilterEx(hwnd, msg, MSGFLT_ALLOW, std::ptr::null_mut());
                 }
             }
-            unsafe { DestroyWindow(hwnd) };
-            return Ok((*name).to_string());
+            hwnds.push(((*name).to_string(), hwnd));
         }
-        Err(last_err)
+
+        if hwnds.is_empty() {
+            return Err(last_err);
+        }
+
+        // Un solo bucle de mensajes atiende todas las ventanas.
+        let mut msg: MSG = unsafe { std::mem::zeroed() };
+        loop {
+            let r = unsafe { GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) };
+            if r == 0 || r == -1 {
+                break;
+            }
+            unsafe {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        }
+        for (_, hwnd) in &hwnds {
+            unsafe { DestroyWindow(*hwnd) };
+        }
+        Ok(hwnds.into_iter().map(|(name, _)| name).collect::<Vec<_>>().join(", "))
     }
 }
 
 #[cfg(windows)]
-pub use win::{serve, wide};
+pub use win::{serve, wide, ALLOWED_FROM_LOWER_INTEGRITY};
 
 #[cfg(not(windows))]
 pub fn serve(_searcher: Arc<dyn Searcher>, _classes: &[&str]) -> Result<String, String> {

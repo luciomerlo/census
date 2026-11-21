@@ -17,22 +17,32 @@ function New-IconBitmap([int]$size) {
     $g.Clear([System.Drawing.Color]::Transparent)
     $s = $size / 256.0
 
+    # A 16-24 px el anillo y el mango finos se pierden: se engordan.
+    $ringW = if ($size -le 24) { 26 } elseif ($size -le 48) { 20 } else { 18 }
+    $handW = if ($size -le 24) { 30 } elseif ($size -le 48) { 26 } else { 24 }
+
     # mango
-    $handlePen = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(255, 0x28, 0x30, 0x3D)), (24 * $s)
+    $handlePen = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(255, 0x28, 0x30, 0x3D)), ($handW * $s)
     $handlePen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
     $handlePen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
     $g.DrawLine($handlePen, [float](150 * $s), [float](150 * $s), [float](197 * $s), [float](197 * $s))
     $handlePen.Dispose()
 
     # lente
-    $cx = 104 * $s; $cy = 104 * $s; $r = (62 - 9) * $s
+    $cx = 104 * $s; $cy = 104 * $s; $r = (62 - $ringW / 2) * $s
     $rect = New-Object System.Drawing.RectangleF ([float]($cx - $r)), ([float]($cy - $r)), ([float]($r * 2)), ([float]($r * 2))
-    $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush $rect, ([System.Drawing.Color]::FromArgb(235, 0xFF, 0xC2, 0x4A)), ([System.Drawing.Color]::FromArgb(240, 0xC8, 0x5A, 0x08)), 45.0
+    if ($size -le 24) {
+        # A 16 px el degradado se funde con el anillo: lente clara y anillo oscuro.
+        $brush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 0xFF, 0xD8, 0x9E))
+    } else {
+        $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush $rect, ([System.Drawing.Color]::FromArgb(235, 0xFF, 0xC2, 0x4A)), ([System.Drawing.Color]::FromArgb(240, 0xC8, 0x5A, 0x08)), 45.0
+    }
     $g.FillEllipse($brush, $rect)
     $brush.Dispose()
 
     # anillo
-    $ringPen = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(255, 0xEE, 0x8A, 0x16)), (18 * $s)
+    $ringColor = if ($size -le 24) { [System.Drawing.Color]::FromArgb(255, 0xC4, 0x54, 0x06) } else { [System.Drawing.Color]::FromArgb(255, 0xEE, 0x8A, 0x16) }
+    $ringPen = New-Object System.Drawing.Pen $ringColor, ($ringW * $s)
     $ringRect = New-Object System.Drawing.RectangleF ([float]($cx - 62 * $s)), ([float]($cy - 62 * $s)), ([float](124 * $s)), ([float](124 * $s))
     $g.DrawEllipse($ringPen, $ringRect)
     $ringPen.Dispose()
@@ -61,40 +71,82 @@ $png = Join-Path $OutDir "icon-256.png"
 $big.Save($png, [System.Drawing.Imaging.ImageFormat]::Png)
 $big.Dispose()
 
-# ICO con 16/32/48/256 en PNG (soportado desde Vista)
-$sizes = @(16, 32, 48, 256)
-$payloads = @()
-foreach ($sz in $sizes) {
-    $b = New-IconBitmap $sz
+# ICO: 16/32/48 en DIB clasico (BGRA + mascara AND) y 256 en PNG.
+# Windows solo acepta PNG de forma confiable en 256x256; con PNG en los chicos
+# el Explorador muestra un icono generico o en blanco.
+function Get-DibBytes([System.Drawing.Bitmap]$bmp) {
+    $w = $bmp.Width; $h = $bmp.Height
     $ms = New-Object System.IO.MemoryStream
-    $b.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
-    $payloads += , ($ms.ToArray())
-    $ms.Dispose(); $b.Dispose()
+    $bw = New-Object System.IO.BinaryWriter $ms
+    # BITMAPINFOHEADER: alto doble (XOR + AND), 32 bpp, sin compresion.
+    $bw.Write([UInt32]40)
+    $bw.Write([Int32]$w)
+    $bw.Write([Int32]($h * 2))
+    $bw.Write([UInt16]1)
+    $bw.Write([UInt16]32)
+    $bw.Write([UInt32]0)
+    $bw.Write([UInt32]($w * $h * 4))
+    $bw.Write([Int32]0); $bw.Write([Int32]0)
+    $bw.Write([UInt32]0); $bw.Write([UInt32]0)
+    # XOR: BGRA de abajo hacia arriba
+    for ($y = $h - 1; $y -ge 0; $y--) {
+        for ($x = 0; $x -lt $w; $x++) {
+            $c = $bmp.GetPixel($x, $y)
+            $bw.Write([byte]$c.B); $bw.Write([byte]$c.G); $bw.Write([byte]$c.R); $bw.Write([byte]$c.A)
+        }
+    }
+    # AND: 1 bit por pixel, filas alineadas a 4 bytes, todo 0 (el alfa manda)
+    $rowBytes = [int]([Math]::Ceiling($w / 32.0) * 4)
+    for ($y = 0; $y -lt $h; $y++) {
+        for ($b = 0; $b -lt $rowBytes; $b++) { $bw.Write([byte]0) }
+    }
+    $bw.Flush()
+    $bytes = $ms.ToArray()
+    $bw.Dispose(); $ms.Dispose()
+    return $bytes
 }
+
+# Payloads explicitos: nada de arrays anidados (PowerShell los aplana).
+$b16 = New-IconBitmap 16;  $p16 = Get-DibBytes $b16; $b16.Dispose()
+$b32 = New-IconBitmap 32;  $p32 = Get-DibBytes $b32; $b32.Dispose()
+$b48 = New-IconBitmap 48;  $p48 = Get-DibBytes $b48; $b48.Dispose()
+$b256 = New-IconBitmap 256
+$ms = New-Object System.IO.MemoryStream
+$b256.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
+$p256 = $ms.ToArray()
+$ms.Dispose(); $b256.Dispose()
+
+$frames = @(
+    @{ Size = 16;  Bpp = 32; Data = $p16 },
+    @{ Size = 32;  Bpp = 32; Data = $p32 },
+    @{ Size = 48;  Bpp = 32; Data = $p48 },
+    @{ Size = 256; Bpp = 32; Data = $p256 }
+)
 
 $icoPath = Join-Path $OutDir "icon.ico"
-$fs = [System.IO.File]::Create($icoPath)
-$bw = New-Object System.IO.BinaryWriter $fs
-$bw.Write([UInt16]0)                 # reserved
-$bw.Write([UInt16]1)                 # type: icon
-$bw.Write([UInt16]$sizes.Count)
-$offset = 6 + 16 * $sizes.Count
-for ($i = 0; $i -lt $sizes.Count; $i++) {
-    $sz = $sizes[$i]
-    $dim = if ($sz -ge 256) { 0 } else { $sz }
-    $data = $payloads[$i]
-    $bw.Write([byte]$dim)            # width
-    $bw.Write([byte]$dim)            # height
-    $bw.Write([byte]0)               # palette
-    $bw.Write([byte]0)               # reserved
-    $bw.Write([UInt16]1)             # planes
-    $bw.Write([UInt16]32)            # bpp
-    $bw.Write([UInt32]$data.Length)
-    $bw.Write([UInt32]$offset)
-    $offset += $data.Length
+# Se arma todo en una lista de bytes y se escribe de una: con BinaryWriter los
+# overloads de Write(byte[]) no son confiables desde PowerShell.
+$all = New-Object System.Collections.Generic.List[byte]
+$all.AddRange([byte[]](0, 0, 1, 0))                 # reserved + type = icon
+$all.Add([byte]($frames.Count % 256))
+$all.Add([byte]0)
+$offset = 6 + 16 * $frames.Count
+foreach ($f in $frames) {
+    $dim = if ($f.Size -ge 256) { 0 } else { $f.Size }
+    $all.Add([byte]$dim)
+    $all.Add([byte]$dim)
+    $all.Add([byte]0)
+    $all.Add([byte]0)
+    $all.Add([byte]1); $all.Add([byte]0)            # planes = 1
+    $all.Add([byte]($f.Bpp % 256)); $all.Add([byte]0)
+    $sz = [BitConverter]::GetBytes([UInt32]$f.Data.Length)
+    $all.AddRange($sz)
+    $of = [BitConverter]::GetBytes([UInt32]$offset)
+    $all.AddRange($of)
+    $offset += $f.Data.Length
 }
-foreach ($data in $payloads) { $bw.Write($data) }
-$bw.Flush(); $bw.Dispose(); $fs.Dispose()
+foreach ($f in $frames) { $all.AddRange([byte[]]$f.Data) }
+[System.IO.File]::WriteAllBytes($icoPath, $all.ToArray())
 
 "ok: $png"
-"ok: $icoPath ($($sizes -join '/'))"
+"ok: $icoPath ($($all.Count) bytes; 16/32/48 en DIB, 256 en PNG)"

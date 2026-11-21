@@ -1,6 +1,6 @@
 //! Cliente IPC: manda QUERY2W y espera la respuesta por `WM_COPYDATA`.
 
-use crate::protocol::{self, Request};
+use crate::protocol::{self, CAPS, Request};
 use crate::server::{CLASS, COMPAT_CLASS};
 
 #[cfg(windows)]
@@ -116,6 +116,16 @@ mod win {
             }
             let r = unsafe { SendMessageW(hwnd, WM_USER + IS_DB_LOADED, 0, 0) };
             r != 0
+        }
+
+        /// Máscara de capacidades del motor (`WM_USER + 402`): qué campos
+        /// completa de verdad y si los metadatos son parciales. 0 = sin índice.
+        pub fn caps(&mut self) -> Option<u32> {
+            let hwnd = find_server();
+            if hwnd.is_null() {
+                return None;
+            }
+            Some(unsafe { SendMessageW(hwnd, WM_USER + CAPS, 0, 0) } as u32)
         }
 
         /// Manda la consulta y devuelve la respuesta cruda (bytes del `WM_COPYDATA`).

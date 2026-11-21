@@ -258,3 +258,45 @@ fn empty_page_is_a_valid_reply() {
     assert_eq!(back.total, 0);
     assert!(back.items.is_empty());
 }
+
+// ---------------------------------------------------------------- capacidades
+
+#[test]
+fn reply_flags_only_announce_present_fields() {
+    use census_ipc::protocol::{caps, req};
+    // Pedir run_count no hace que venga: no lo tenemos.
+    let asked = req::BASIC | req::RUN_COUNT;
+    let present = caps::present(asked);
+    assert_eq!(present, req::BASIC);
+    assert!(!caps::has(present, req::RUN_COUNT));
+    // Lo que sí tenemos se conserva.
+    assert!(caps::has(present, req::NAME));
+    assert!(caps::has(present, req::SIZE));
+    // Y si piden de más (accessed, attributes), también viaja.
+    let full = caps::present(req::BASIC | req::DATE_ACCESSED | req::ATTRIBUTES | req::RUN_COUNT);
+    assert!(caps::has(full, req::DATE_ACCESSED));
+    assert!(caps::has(full, req::ATTRIBUTES));
+    assert!(!caps::has(full, req::RUN_COUNT));
+}
+
+#[test]
+fn capabilities_flag_partial_metadata() {
+    use census_ipc::protocol::caps;
+    assert!(caps::has(caps::DEFAULT, caps::PARTIAL_METADATA), "Census debe avisar que los metadatos son parciales");
+    assert!(caps::has(caps::DEFAULT, census_ipc::protocol::req::DATE_ACCESSED));
+    assert!(!caps::has(caps::DEFAULT, census_ipc::protocol::req::RUN_COUNT));
+    // Máscara de mensaje estable: WM_USER + 402.
+    assert_eq!(census_ipc::protocol::CAPS, 402);
+}
+
+#[test]
+fn messages_a_medium_client_needs_are_filtered() {
+    // Sin estos tres filtros, un cliente sin elevación no puede hablar con
+    // `census serve` elevado (UIPI devuelve error 5). Ver docs/WIZE-INTEGRATION.md.
+    use census_ipc::protocol::{CAPS, IS_DB_LOADED};
+    let allowed = census_ipc::server::ALLOWED_FROM_LOWER_INTEGRITY;
+    assert_eq!(allowed.len(), 3);
+    assert!(allowed.contains(&census_ipc::protocol::WM_COPYDATA));
+    assert!(allowed.contains(&(0x0400 + IS_DB_LOADED)));
+    assert!(allowed.contains(&(0x0400 + CAPS)));
+}
