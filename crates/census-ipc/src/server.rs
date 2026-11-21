@@ -28,8 +28,9 @@ mod win {
     use windows_sys::Win32::System::DataExchange::COPYDATASTRUCT;
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, PostQuitMessage, RegisterClassW,
-        SendMessageW, TranslateMessage, MSG, WM_COPYDATA, WM_DESTROY, WM_USER, WNDCLASSW,
+        ChangeWindowMessageFilterEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
+        GetMessageW, MSGFLT_ALLOW, PostQuitMessage, RegisterClassW, SendMessageW, TranslateMessage, MSG, WM_COPYDATA,
+        WM_DESTROY, WM_USER, WNDCLASSW,
     };
 
     static SEARCHER: OnceLock<Mutex<Option<Arc<dyn Searcher>>>> = OnceLock::new();
@@ -157,6 +158,15 @@ mod win {
             if hwnd.is_null() {
                 last_err = format!("CreateWindowExW({name}) falló");
                 continue;
+            }
+
+            // Un cliente de integridad media (WizEverything/SortEverything) debe
+            // poder consultar un `census serve` elevado. Sin esto, UIPI bloquea
+            // WM_COPYDATA y también WM_USER+IS_DB_LOADED, y el cliente concluye
+            // "Census no está en ejecución" aunque el proceso esté vivo.
+            unsafe {
+                ChangeWindowMessageFilterEx(hwnd, WM_COPYDATA, MSGFLT_ALLOW, std::ptr::null_mut());
+                ChangeWindowMessageFilterEx(hwnd, WM_USER + IS_DB_LOADED, MSGFLT_ALLOW, std::ptr::null_mut());
             }
 
             let mut msg: MSG = unsafe { std::mem::zeroed() };
