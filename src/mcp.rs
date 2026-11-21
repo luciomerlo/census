@@ -44,14 +44,19 @@ pub enum Backend {
     /// Demonio ya corriendo (elevado) al que se le pregunta por IPC.
     Ipc(Mutex<Client>),
     /// Índice propio en este proceso.
-    Local { index: Arc<Index>, service: Arc<Service> },
+    Local {
+        index: Arc<Index>,
+        service: Arc<Service>,
+    },
 }
 
 impl Backend {
     pub fn open(root: Option<&str>, volume: char) -> Result<Self, String> {
         // CENSUS_MCP_LOCAL=1 fuerza el índice propio: lo usan los tests para no
         // depender de que haya (o no) un demonio corriendo en la máquina.
-        let force_local = std::env::var("CENSUS_MCP_LOCAL").map(|v| v != "0").unwrap_or(false);
+        let force_local = std::env::var("CENSUS_MCP_LOCAL")
+            .map(|v| v != "0")
+            .unwrap_or(false);
         if !force_local {
             if let Ok(client) = Client::new() {
                 if client.census_is_running() && client.is_ready() {
@@ -78,7 +83,13 @@ impl Backend {
         }
     }
 
-    pub fn search(&self, q: &str, sort: u32, offset: usize, limit: usize) -> Result<(usize, Vec<Hit>), String> {
+    pub fn search(
+        &self,
+        q: &str,
+        sort: u32,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(usize, Vec<Hit>), String> {
         match self {
             Backend::Ipc(c) => {
                 let mut c = c.lock().map_err(|_| "cliente IPC envenenado")?;
@@ -108,7 +119,11 @@ impl Backend {
                         Hit {
                             path: index.full_path(id),
                             name: index.name_string(id),
-                            size: if n.size == u64::MAX { None } else { Some(n.size) },
+                            size: if n.size == u64::MAX {
+                                None
+                            } else {
+                                Some(n.size)
+                            },
                             mtime: n.mtime,
                             is_dir: n.flags & crate::index::F_DIR != 0,
                         }
@@ -150,7 +165,11 @@ impl Backend {
                         Hit {
                             path: index.full_path(id),
                             name: index.name_string(id),
-                            size: if n.size == u64::MAX { None } else { Some(n.size) },
+                            size: if n.size == u64::MAX {
+                                None
+                            } else {
+                                Some(n.size)
+                            },
                             mtime: n.mtime,
                             is_dir: n.flags & crate::index::F_DIR != 0,
                         }
@@ -209,12 +228,19 @@ fn human_size(bytes: u64) -> String {
 
 fn stamp(unix: i64) -> String {
     chrono::DateTime::from_timestamp(unix, 0)
-        .map(|d| d.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
+        .map(|d| {
+            d.with_timezone(&chrono::Local)
+                .format("%Y-%m-%d %H:%M")
+                .to_string()
+        })
         .unwrap_or_else(|| "?".into())
 }
 
 fn format_hits(total: usize, offset: usize, hits: &[Hit]) -> String {
-    let mut s = format!("{total} resultados (mostrando {} desde {offset})", hits.len());
+    let mut s = format!(
+        "{total} resultados (mostrando {} desde {offset})",
+        hits.len()
+    );
     for h in hits {
         let size = match h.size {
             Some(b) if !h.is_dir => human_size(b),
@@ -342,7 +368,10 @@ pub(crate) fn call(backend: &Backend, name: &str, args: &Value) -> Value {
             match backend.search(q, sort_of(args), offset, limit) {
                 Ok((total, hits)) => {
                     let text = format_hits(total, offset, &hits);
-                    ok_text(text, Some(json!({"total": total, "offset": offset, "items": hits_json(&hits)})))
+                    ok_text(
+                        text,
+                        Some(json!({"total": total, "offset": offset, "items": hits_json(&hits)})),
+                    )
                 }
                 Err(e) => tool_error(&e),
             }
@@ -350,7 +379,9 @@ pub(crate) fn call(backend: &Backend, name: &str, args: &Value) -> Value {
         "count" => {
             let q = arg_str(args, "query").unwrap_or("");
             match backend.search(q, protocol::sort::NAME_ASC, 0, 1) {
-                Ok((total, _)) => ok_text(format!("{total} resultados"), Some(json!({"total": total}))),
+                Ok((total, _)) => {
+                    ok_text(format!("{total} resultados"), Some(json!({"total": total})))
+                }
                 Err(e) => tool_error(&e),
             }
         }
@@ -359,9 +390,13 @@ pub(crate) fn call(backend: &Backend, name: &str, args: &Value) -> Value {
             let limit = arg_num(args, "limit", 20).max(1);
             match backend.collect(q) {
                 Ok((_, mut hits)) => {
-                    hits.sort_unstable_by(|a, b| b.size.unwrap_or(0).cmp(&a.size.unwrap_or(0)));
+                    hits.sort_unstable_by_key(|h| std::cmp::Reverse(h.size.unwrap_or(0)));
                     hits.truncate(limit);
-                    let text = format!("{} mas grandes\n{}", hits.len(), format_hits(hits.len(), 0, &hits));
+                    let text = format!(
+                        "{} mas grandes\n{}",
+                        hits.len(),
+                        format_hits(hits.len(), 0, &hits)
+                    );
                     ok_text(text, Some(hits_json(&hits)))
                 }
                 Err(e) => tool_error(&e),
@@ -372,9 +407,13 @@ pub(crate) fn call(backend: &Backend, name: &str, args: &Value) -> Value {
             let limit = arg_num(args, "limit", 20).max(1);
             match backend.collect(q) {
                 Ok((_, mut hits)) => {
-                    hits.sort_unstable_by(|a, b| b.mtime.cmp(&a.mtime));
+                    hits.sort_unstable_by_key(|h| std::cmp::Reverse(h.mtime));
                     hits.truncate(limit);
-                    let text = format!("{} mas recientes\n{}", hits.len(), format_hits(hits.len(), 0, &hits));
+                    let text = format!(
+                        "{} mas recientes\n{}",
+                        hits.len(),
+                        format_hits(hits.len(), 0, &hits)
+                    );
                     ok_text(text, Some(hits_json(&hits)))
                 }
                 Err(e) => tool_error(&e),
@@ -415,7 +454,12 @@ pub fn serve_stdio(backend: Backend) -> Result<(), String> {
         let req: Value = match serde_json::from_str(line) {
             Ok(v) => v,
             Err(e) => {
-                write_error(&mut out, Value::Null, -32700, &format!("JSON invalido: {e}"));
+                write_error(
+                    &mut out,
+                    Value::Null,
+                    -32700,
+                    &format!("JSON invalido: {e}"),
+                );
                 continue;
             }
         };
@@ -444,7 +488,10 @@ pub fn serve_stdio(backend: Backend) -> Result<(), String> {
             "tools/list" => Ok(tools()),
             "tools/call" => {
                 let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
+                let args = params
+                    .get("arguments")
+                    .cloned()
+                    .unwrap_or_else(|| json!({}));
                 Ok(call(&backend, name, &args))
             }
             "resources/list" => Ok(json!({"resources": []})),
@@ -453,7 +500,10 @@ pub fn serve_stdio(backend: Backend) -> Result<(), String> {
         };
 
         match reply {
-            Ok(result) => write_msg(&mut out, &json!({"jsonrpc": "2.0", "id": id, "result": result})),
+            Ok(result) => write_msg(
+                &mut out,
+                &json!({"jsonrpc": "2.0", "id": id, "result": result}),
+            ),
             Err((code, msg)) => write_error(&mut out, id, code, &msg),
         }
     }

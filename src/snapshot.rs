@@ -1,4 +1,6 @@
 //! Snapshot en disco del índice: formato propio `C.wcat`.
+// `as_chunks` (lo que sugiere el lint) todavía es inestable en Rust estable.
+#![allow(clippy::chunks_exact_to_as_chunks)]
 //!
 //! Es lo que permite arrancar en milisegundos en vez de releer la MFT: el
 //! índice completo (`Index`) se vuelca a un archivo y al arrancar se lee tal
@@ -107,11 +109,11 @@ impl Fnv {
     fn u16(&mut self, v: u16) {
         self.bytes(&v.to_le_bytes());
     }
-    #[cfg(test)]
+    #[allow(dead_code)] // queda como utilidad del checksum para futuros campos
     fn u32(&mut self, v: u32) {
         self.bytes(&v.to_le_bytes());
     }
-    #[cfg(test)]
+    #[allow(dead_code)]
     fn u64(&mut self, v: u64) {
         self.bytes(&v.to_le_bytes());
     }
@@ -220,8 +222,13 @@ pub fn save(index: &Index, path: &Path) -> std::io::Result<u64> {
     let tmp = PathBuf::from(tmp_name);
 
     let file = fs::File::create(&tmp)?;
-    let mut w = LeWriter { inner: io::BufWriter::new(file), written: 0 };
-    let res = write_all(&mut w, index, node_count, name_units, root_count, build_ms, checksum);
+    let mut w = LeWriter {
+        inner: io::BufWriter::new(file),
+        written: 0,
+    };
+    let res = write_all(
+        &mut w, index, node_count, name_units, root_count, build_ms, checksum,
+    );
     let written = w.written;
     drop(w);
     // Si algo falló, no dejamos el .tmp tirado.
@@ -397,12 +404,14 @@ pub fn load(path: &Path) -> Result<Index, LoadError> {
     let _padding = r.take(3).unwrap();
     let letter_u32 = r.u32().unwrap();
     let built_at = r.i64().unwrap();
-    let mut stats = Stats::default();
-    stats.records = r.u64().unwrap();
-    stats.files = r.u64().unwrap();
-    stats.dirs = r.u64().unwrap();
-    stats.skipped = r.u64().unwrap();
-    stats.build_ms = r.u64().unwrap() as u128;
+    let stats = Stats {
+        records: r.u64().unwrap(),
+        files: r.u64().unwrap(),
+        dirs: r.u64().unwrap(),
+        skipped: r.u64().unwrap(),
+        build_ms: r.u64().unwrap() as u128,
+        name_units: name_units as u64,
+    };
     let checksum = r.u64().unwrap();
 
     // Cantidades absurdas: rechazar antes de reservar nada.
@@ -430,7 +439,7 @@ pub fn load(path: &Path) -> Result<Index, LoadError> {
     file.read_exact(&mut roots_bytes).map_err(eof_or_io)?;
     let roots: Vec<u32> = roots_bytes
         .chunks_exact(4)
-        .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+        .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
         .collect();
     for &rt in &roots {
         if rt >= node_count {
@@ -447,7 +456,8 @@ pub fn load(path: &Path) -> Result<Index, LoadError> {
     let mut leídos: u32 = 0;
     while leídos < node_count {
         let n = (node_count - leídos).min(NODE_CHUNK as u32) as usize;
-        file.read_exact(&mut chunk[..n * NODE_LEN]).map_err(eof_or_io)?;
+        file.read_exact(&mut chunk[..n * NODE_LEN])
+            .map_err(eof_or_io)?;
         for node_bytes in chunk[..n * NODE_LEN].chunks_exact(NODE_LEN) {
             let arr: [u8; NODE_LEN] = node_bytes.try_into().unwrap();
             h.bytes(&arr);
@@ -489,7 +499,6 @@ pub fn load(path: &Path) -> Result<Index, LoadError> {
         return Err(LoadError::Checksum);
     }
 
-    stats.name_units = name_units as u64;
     Ok(Index {
         letter,
         root: roots.first().copied().unwrap_or(0),
@@ -625,7 +634,7 @@ mod tests {
         let t = TempFile::new("round_trip");
         let ix = dos_raices();
         assert_eq!(ix.roots.len(), 2, "el índice sintético tiene 2 raíces");
-        assert!(ix.names.iter().any(|&u| u == 'ñ' as u16), "hay ñ en la arena");
+        assert!(ix.names.contains(&('ñ' as u16)), "hay ñ en la arena");
 
         let escritos = save(&ix, t.path()).unwrap();
         assert!(escritos > 0);
@@ -635,8 +644,12 @@ mod tests {
         // Los nombres raros sobreviven intactos.
         let con_ñ = (0..leído.len() as u32).any(|i| leído.name_string(i) == "Ñandú.txt");
         assert!(con_ñ, "el nombre con ñ no sobrevivió al round-trip");
-        let con_acentos = (0..leído.len() as u32).any(|i| leído.name_string(i) == "informe áéíóú.pdf");
-        assert!(con_acentos, "el nombre con acentos no sobrevivió al round-trip");
+        let con_acentos =
+            (0..leído.len() as u32).any(|i| leído.name_string(i) == "informe áéíóú.pdf");
+        assert!(
+            con_acentos,
+            "el nombre con acentos no sobrevivió al round-trip"
+        );
         assert_eq!(leído.root_for('C'), Some(leído.root));
         assert!(leído.root_for('D').is_some());
     }
@@ -668,7 +681,9 @@ mod tests {
 
         // Versión 99.
         save(&ix, t.path()).unwrap();
-        parchear(t.path(), |b| b[10..12].copy_from_slice(&99u16.to_le_bytes()));
+        parchear(t.path(), |b| {
+            b[10..12].copy_from_slice(&99u16.to_le_bytes())
+        });
         match load(t.path()) {
             Err(LoadError::Version(99)) => {}
             otro => panic!("se esperaba Version(99), obtuve: {otro:?}"),
@@ -732,7 +747,7 @@ mod tests {
         save(&ix, t.path()).unwrap();
 
         // `parent` del nodo 1 vive en HEADER_LEN + 4*roots + 1*48 + 8.
-        let off = HEADER_LEN + 4 * ix.roots.len() + 1 * NODE_LEN + NODE_PARENT_OFF;
+        let off = HEADER_LEN + 4 * ix.roots.len() + NODE_LEN + NODE_PARENT_OFF;
         parchear(t.path(), |b| {
             b[off..off + 4].copy_from_slice(&u32::MAX.to_le_bytes())
         });
@@ -801,7 +816,10 @@ mod tests {
         let esperado_dirs = ix.nodes.iter().filter(|n| n.flags & F_DIR != 0).count();
         let esperado_roots = ix.nodes.iter().filter(|n| n.flags & F_ROOT != 0).count();
         assert_eq!(leído.stats.dirs, esperado_dirs as u64);
-        assert_eq!(leído.stats.files, (leído.nodes.len() - esperado_dirs) as u64);
+        assert_eq!(
+            leído.stats.files,
+            (leído.nodes.len() - esperado_dirs) as u64
+        );
         assert_eq!(
             leído.nodes.iter().filter(|n| n.flags & F_ROOT != 0).count(),
             esperado_roots

@@ -39,12 +39,48 @@ struct Row {
 /// El indice entero, ya en orden `NAME_ASC`. Una unidad, dos carpetas, tres
 /// archivos (el del medio con ñ, para que el UTF-16 viaje de punta a punta).
 const ROWS: &[Row] = &[
-    Row { name: "C:", path: "", size: None, is_dir: true, is_drive: true },
-    Row { name: "Users", path: "C:", size: None, is_dir: true, is_drive: false },
-    Row { name: "Docs", path: "C:\\Users\\Lucio", size: None, is_dir: true, is_drive: false },
-    Row { name: "a.txt", path: "C:\\Users\\Lucio\\Docs", size: Some(1_024), is_dir: false, is_drive: false },
-    Row { name: "ñandú.pdf", path: "C:\\Users\\Lucio\\Docs", size: Some(4_096), is_dir: false, is_drive: false },
-    Row { name: "zoo.csv", path: "C:\\Users\\Lucio\\Docs", size: Some(0), is_dir: false, is_drive: false },
+    Row {
+        name: "C:",
+        path: "",
+        size: None,
+        is_dir: true,
+        is_drive: true,
+    },
+    Row {
+        name: "Users",
+        path: "C:",
+        size: None,
+        is_dir: true,
+        is_drive: false,
+    },
+    Row {
+        name: "Docs",
+        path: "C:\\Users\\Lucio",
+        size: None,
+        is_dir: true,
+        is_drive: false,
+    },
+    Row {
+        name: "a.txt",
+        path: "C:\\Users\\Lucio\\Docs",
+        size: Some(1_024),
+        is_dir: false,
+        is_drive: false,
+    },
+    Row {
+        name: "ñandú.pdf",
+        path: "C:\\Users\\Lucio\\Docs",
+        size: Some(4_096),
+        is_dir: false,
+        is_drive: false,
+    },
+    Row {
+        name: "zoo.csv",
+        path: "C:\\Users\\Lucio\\Docs",
+        size: Some(0),
+        is_dir: false,
+        is_drive: false,
+    },
 ];
 
 impl Row {
@@ -90,14 +126,23 @@ impl Searcher for FakeIndex {
         true
     }
 
-    fn search(&self, search: &str, sort_kind: u32, offset: u32, max: u32, flags: u32) -> (u32, Vec<ReplyItem>) {
+    fn search(
+        &self,
+        search: &str,
+        sort_kind: u32,
+        offset: u32,
+        max: u32,
+        flags: u32,
+    ) -> (u32, Vec<ReplyItem>) {
         let needle = search.trim().to_lowercase();
         let mut hits: Vec<&Row> = ROWS
             .iter()
             .filter(|r| {
                 needle.is_empty()
                     || r.name.to_lowercase().contains(&needle)
-                    || format!("{}\\{}", r.path, r.name).to_lowercase().contains(&needle)
+                    || format!("{}\\{}", r.path, r.name)
+                        .to_lowercase()
+                        .contains(&needle)
             })
             .collect();
         if sort_kind == sort::NAME_DESC {
@@ -106,8 +151,15 @@ impl Searcher for FakeIndex {
         let total = hits.len() as u32;
         let start = (offset as usize).min(hits.len());
         let room = hits.len() - start;
-        let take = if max == 0 { room } else { (max as usize).min(room) };
-        let items = hits[start..start + take].iter().map(|r| r.materialize(flags)).collect();
+        let take = if max == 0 {
+            room
+        } else {
+            (max as usize).min(room)
+        };
+        let items = hits[start..start + take]
+            .iter()
+            .map(|r| r.materialize(flags))
+            .collect();
         (total, items)
     }
 }
@@ -132,7 +184,10 @@ fn ipc_e2e_servidor_y_cliente_por_ventana() {
     // un demonio de Census. Nada de esto puede paniquear.
     // ------------------------------------------------------------------
     let mut client = Client::new().expect("Client::new deberia crear su ventana de respuesta");
-    assert!(!client.census_is_running(), "la clase {CLASS} no deberia estar registrada todavia");
+    assert!(
+        !client.census_is_running(),
+        "la clase {CLASS} no deberia estar registrada todavia"
+    );
 
     // `find_server` cae a la clase de compatibilidad cuando Census no esta, y el
     // Everything real registra esa clase en la maquina de cualquiera. Si hay uno
@@ -143,7 +198,10 @@ fn ipc_e2e_servidor_y_cliente_por_ventana() {
         eprintln!("aviso: hay un IPC de compatibilidad (Everything real) escuchando; caso 1 en modo parcial");
         let _ = client.is_ready();
         let raw = client.query_raw("", sort::NAME_ASC, 0, 10, req::BASIC);
-        assert!(!client.census_is_running(), "lo que contesto no puede haber registrado {CLASS}");
+        assert!(
+            !client.census_is_running(),
+            "lo que contesto no puede haber registrado {CLASS}"
+        );
         if let Some(raw) = raw {
             let ajeno = parse(&raw);
             assert_ne!(
@@ -155,7 +213,9 @@ fn ipc_e2e_servidor_y_cliente_por_ventana() {
     } else {
         assert!(!client.is_ready(), "sin Census no hay indice listo");
         assert!(
-            client.query_raw("", sort::NAME_ASC, 0, 10, req::BASIC).is_none(),
+            client
+                .query_raw("", sort::NAME_ASC, 0, 10, req::BASIC)
+                .is_none(),
             "sin servidor la consulta no puede responder"
         );
     }
@@ -201,10 +261,21 @@ fn ipc_e2e_servidor_y_cliente_por_ventana() {
             .query_raw("", sort::NAME_ASC, offset, 2, req::BASIC)
             .unwrap_or_else(|| panic!("el servidor no contesto la pagina en offset {offset}"));
         let page = parse(&raw);
-        assert_eq!(page.total, ROWS.len() as u32, "total constante en toda pagina (offset {offset})");
-        assert_eq!(page.offset, offset, "el servidor debe devolver el offset pedido");
+        assert_eq!(
+            page.total,
+            ROWS.len() as u32,
+            "total constante en toda pagina (offset {offset})"
+        );
+        assert_eq!(
+            page.offset, offset,
+            "el servidor debe devolver el offset pedido"
+        );
         assert_eq!(page.items.len(), 2, "pagina de 2 en offset {offset}");
-        assert_eq!(page.flags, req::BASIC, "el servidor responde los flags del pedido");
+        assert_eq!(
+            page.flags,
+            req::BASIC,
+            "el servidor responde los flags del pedido"
+        );
         pages.push(page);
     }
 
@@ -213,75 +284,165 @@ fn ipc_e2e_servidor_y_cliente_por_ventana() {
         paged.extend(page.items.iter().cloned());
     }
     assert_eq!(paged.len(), ROWS.len());
-    let mut vistos: Vec<(String, String)> = paged.iter().map(|i| (i.name.clone(), i.path.clone())).collect();
+    let mut vistos: Vec<(String, String)> = paged
+        .iter()
+        .map(|i| (i.name.clone(), i.path.clone()))
+        .collect();
     vistos.sort();
     vistos.dedup();
-    assert_eq!(vistos.len(), ROWS.len(), "ningun item puede repetirse entre paginas");
+    assert_eq!(
+        vistos.len(),
+        ROWS.len(),
+        "ningun item puede repetirse entre paginas"
+    );
 
     // El orden concatenado tiene que ser el de `query_all` con una pagina grande.
-    let all = client.query_all("", sort::NAME_ASC, 100).expect("query_all deberia agotar total");
+    let all = client
+        .query_all("", sort::NAME_ASC, 100)
+        .expect("query_all deberia agotar total");
     assert_eq!(all.total, ROWS.len() as u32);
-    assert_eq!(all.items.len(), ROWS.len(), "query_all no puede dejar items en el tintero");
-    assert_eq!(paged, all.items, "paginar de a 2 y concatenar debe dar el mismo orden");
-    assert_eq!(all.items, expected(req::BASIC, false), "el indice debe salir en NAME_ASC");
+    assert_eq!(
+        all.items.len(),
+        ROWS.len(),
+        "query_all no puede dejar items en el tintero"
+    );
+    assert_eq!(
+        paged, all.items,
+        "paginar de a 2 y concatenar debe dar el mismo orden"
+    );
+    assert_eq!(
+        all.items,
+        expected(req::BASIC, false),
+        "el indice debe salir en NAME_ASC"
+    );
 
     // Caso 5 (espejo): el orden inverso tambien cierra por la misma via.
-    let all_desc = client.query_all("", sort::NAME_DESC, 2).expect("query_all descendente");
+    let all_desc = client
+        .query_all("", sort::NAME_DESC, 2)
+        .expect("query_all descendente");
     assert_eq!(all_desc.items, expected(req::BASIC, true));
 
     // ------------------------------------------------------------------
     // Caso 6: semantica de cada tipo de item.
     // ------------------------------------------------------------------
-    let drive = all.items.iter().find(|i| i.is_drive).expect("deberia haber una unidad");
+    let drive = all
+        .items
+        .iter()
+        .find(|i| i.is_drive)
+        .expect("deberia haber una unidad");
     assert_eq!(drive.name, "C:");
     assert!(drive.is_dir, "una unidad es un nodo de directorio");
     assert_eq!(drive.flags(), item::DRIVE);
     assert_eq!(drive.size, None, "la unidad no tiene tamano conocido");
 
-    let file = all.items.iter().find(|i| i.name == "ñandú.pdf").expect("deberia estar el archivo");
+    let file = all
+        .items
+        .iter()
+        .find(|i| i.name == "ñandú.pdf")
+        .expect("deberia estar el archivo");
     assert!(!file.is_dir, "un archivo no es directorio");
     assert!(!file.is_drive);
     assert_eq!(file.flags(), 0);
     assert_eq!(file.size, Some(4_096));
     assert_eq!(file.path, "C:\\Users\\Lucio\\Docs");
-    assert!(file.modified_ft > 0, "la fecha de modificacion fija debe viajar");
-    assert_eq!(file.accessed_ft, 0, "DATE_ACCESSED no se pidio, no puede venir");
+    assert!(
+        file.modified_ft > 0,
+        "la fecha de modificacion fija debe viajar"
+    );
+    assert_eq!(
+        file.accessed_ft, 0,
+        "DATE_ACCESSED no se pidio, no puede venir"
+    );
 
-    let folder = all.items.iter().find(|i| i.name == "Docs").expect("deberia estar la carpeta");
+    let folder = all
+        .items
+        .iter()
+        .find(|i| i.name == "Docs")
+        .expect("deberia estar la carpeta");
     assert!(folder.is_dir && !folder.is_drive);
     assert_eq!(folder.flags(), item::FOLDER);
-    assert_eq!(folder.size, None, "las carpetas viajan con tamano desconocido");
+    assert_eq!(
+        folder.size, None,
+        "las carpetas viajan con tamano desconocido"
+    );
 
     // ------------------------------------------------------------------
     // Extras de contrato: filtro, y que el servidor recorte los campos que el
     // motor no sabe completar (flags -> bytes que viajan).
     // ------------------------------------------------------------------
-    let solo = parse(&client.query_raw("Docs", sort::NAME_ASC, 0, 10, req::BASIC).expect("filtro por carpeta"));
-    assert_eq!(solo.total, 4, "el filtro debe recortar el total: la carpeta y sus tres archivos");
+    let solo = parse(
+        &client
+            .query_raw("Docs", sort::NAME_ASC, 0, 10, req::BASIC)
+            .expect("filtro por carpeta"),
+    );
+    assert_eq!(
+        solo.total, 4,
+        "el filtro debe recortar el total: la carpeta y sus tres archivos"
+    );
     assert_eq!(solo.items.len(), 4);
-    assert!(solo.items.iter().all(|i| i.path.contains("Docs") || i.name.contains("Docs")));
-    let vacio = parse(&client.query_raw("zz_no_existe", sort::NAME_ASC, 0, 10, req::BASIC).expect("filtro vacio"));
-    assert_eq!(vacio.total, 0, "una busqueda sin coincidencias no puede inventar items");
+    assert!(solo
+        .items
+        .iter()
+        .all(|i| i.path.contains("Docs") || i.name.contains("Docs")));
+    let vacio = parse(
+        &client
+            .query_raw("zz_no_existe", sort::NAME_ASC, 0, 10, req::BASIC)
+            .expect("filtro vacio"),
+    );
+    assert_eq!(
+        vacio.total, 0,
+        "una busqueda sin coincidencias no puede inventar items"
+    );
     assert!(vacio.items.is_empty());
 
-    let uni = parse(&client.query_raw(".pdf", sort::NAME_ASC, 0, 10, req::BASIC).expect("filtro por extension"));
+    let uni = parse(
+        &client
+            .query_raw(".pdf", sort::NAME_ASC, 0, 10, req::BASIC)
+            .expect("filtro por extension"),
+    );
     assert_eq!(uni.total, 1);
-    assert_eq!(uni.items[0].name, "ñandú.pdf", "el nombre con ñ sobrevive el viaje UTF-16");
+    assert_eq!(
+        uni.items[0].name, "ñandú.pdf",
+        "el nombre con ñ sobrevive el viaje UTF-16"
+    );
 
-    let name_only = parse(&client.query_raw("", sort::NAME_ASC, 0, 2, req::NAME).expect("pagina con NAME"));
+    let name_only = parse(
+        &client
+            .query_raw("", sort::NAME_ASC, 0, 2, req::NAME)
+            .expect("pagina con NAME"),
+    );
     assert_eq!(name_only.flags, req::NAME);
     assert_eq!(name_only.items.len(), 2);
-    assert!(name_only.items.iter().all(|i| !i.name.is_empty()), "NAME debe traer el nombre");
-    assert!(name_only.items.iter().all(|i| i.path.is_empty() && i.size.is_none()), "no se paga lo que no se pidio");
+    assert!(
+        name_only.items.iter().all(|i| !i.name.is_empty()),
+        "NAME debe traer el nombre"
+    );
+    assert!(
+        name_only
+            .items
+            .iter()
+            .all(|i| i.path.is_empty() && i.size.is_none()),
+        "no se paga lo que no se pidio"
+    );
 
-    let off_end = parse(&client.query_raw("", sort::NAME_ASC, ROWS.len() as u32, 2, req::BASIC).expect("offset final"));
+    let off_end = parse(
+        &client
+            .query_raw("", sort::NAME_ASC, ROWS.len() as u32, 2, req::BASIC)
+            .expect("offset final"),
+    );
     assert_eq!(off_end.total, ROWS.len() as u32);
-    assert!(off_end.items.is_empty(), "offset == total debe dar pagina vacia");
+    assert!(
+        off_end.items.is_empty(),
+        "offset == total debe dar pagina vacia"
+    );
 
     // Y el servidor sigue ahi, bloqueado a proposito: si `serve` hubiera
     // vuelto, es que su bucle de mensajes se cayo.
     assert!(
-        matches!(done_rx.recv_timeout(Duration::from_millis(200)), Err(RecvTimeoutError::Timeout)),
+        matches!(
+            done_rx.recv_timeout(Duration::from_millis(200)),
+            Err(RecvTimeoutError::Timeout)
+        ),
         "serve debe seguir en su bucle de mensajes"
     );
 }
@@ -324,7 +485,11 @@ fn serve_con_clase_custom_usa_ese_nombre() {
     match rx.recv_timeout(Duration::from_secs(3)) {
         Err(RecvTimeoutError::Timeout) => {}
         Err(e @ RecvTimeoutError::Disconnected) => panic!("el ganador termino el hilo: {e}"),
-        Ok(Ok(c)) => panic!("los dos serve devolvieron Ok({c}): el registro de {CUSTOM_CLASS} no es exclusivo"),
-        Ok(Err(e)) => panic!("los dos serve fallaron ({e}): la clase {CUSTOM_CLASS} no estaba libre"),
+        Ok(Ok(c)) => panic!(
+            "los dos serve devolvieron Ok({c}): el registro de {CUSTOM_CLASS} no es exclusivo"
+        ),
+        Ok(Err(e)) => {
+            panic!("los dos serve fallaron ({e}): la clase {CUSTOM_CLASS} no estaba libre")
+        }
     }
 }

@@ -50,11 +50,26 @@ fn build_fixture() -> (Fixture, Vec<FileSpec>) {
     // 5 archivos: nombres, tamaños y extensiones todos distintos, para que
     // las verificaciones de búsqueda, conteo y "largest" no sean ambiguas.
     let files = [
-        FileSpec { rel: "sub1/alpha.txt", size: 100 },
-        FileSpec { rel: "sub1/delta.log", size: 200 },
-        FileSpec { rel: "sub2/beta.txt", size: 500 },
-        FileSpec { rel: "sub2/gamma.md", size: 1_000 }, // el más grande
-        FileSpec { rel: "epsilon.dat", size: 50 },
+        FileSpec {
+            rel: "sub1/alpha.txt",
+            size: 100,
+        },
+        FileSpec {
+            rel: "sub1/delta.log",
+            size: 200,
+        },
+        FileSpec {
+            rel: "sub2/beta.txt",
+            size: 500,
+        },
+        FileSpec {
+            rel: "sub2/gamma.md",
+            size: 1_000,
+        }, // el más grande
+        FileSpec {
+            rel: "epsilon.dat",
+            size: 50,
+        },
     ];
     for f in &files {
         let mut bytes = Vec::with_capacity(f.size as usize);
@@ -116,7 +131,11 @@ impl Server {
             }
         });
 
-        Server { child, stdin: Some(stdin), rx }
+        Server {
+            child,
+            stdin: Some(stdin),
+            rx,
+        }
     }
 
     fn send(&mut self, value: &Value) {
@@ -140,8 +159,7 @@ impl Server {
                 panic!("el servidor cerró stdout antes de responder a {what}")
             }
         };
-        serde_json::from_str(&line)
-            .unwrap_or_else(|e| panic!("stdout no es JSON ({e}): {line:?}"))
+        serde_json::from_str(&line).unwrap_or_else(|e| panic!("stdout no es JSON ({e}): {line:?}"))
     }
 
     /// Verifica que NO llegue ninguna línea (una notificación no responde).
@@ -206,8 +224,7 @@ fn mcp_stdio_end_to_end() {
         "protocolVersion no ecoado: {r}"
     );
     assert_eq!(
-        r["result"]["serverInfo"]["name"],
-        "census",
+        r["result"]["serverInfo"]["name"], "census",
         "serverInfo.name: {r}"
     );
     assert!(
@@ -236,8 +253,7 @@ fn mcp_stdio_end_to_end() {
     assert_eq!(names, ["search", "count", "largest", "recent", "stats"]);
     for t in tools {
         assert_eq!(
-            t["inputSchema"]["type"],
-            "object",
+            t["inputSchema"]["type"], "object",
             "inputSchema.type de {}: {t}",
             t["name"]
         );
@@ -259,7 +275,10 @@ fn mcp_stdio_end_to_end() {
     let text = r["result"]["content"][0]["text"]
         .as_str()
         .expect("search sin texto: {r}");
-    assert!(text.contains("resultados"), "search sin 'resultados': {text:?}");
+    assert!(
+        text.contains("resultados"),
+        "search sin 'resultados': {text:?}"
+    );
     let items = r["result"]["structuredContent"]["items"]
         .as_array()
         .expect("search sin structuredContent.items: {r}");
@@ -302,11 +321,13 @@ fn mcp_stdio_end_to_end() {
         .as_array()
         .expect("largest sin structuredContent: {r}");
     assert_eq!(
-        ranked[0]["name"],
-        "gamma.md",
+        ranked[0]["name"], "gamma.md",
         "el más grande (gamma.md, 1000 B) debe ir primero: {ranked:?}"
     );
-    assert_eq!(ranked[0]["size"], 1_000, "tamaño del más grande: {ranked:?}");
+    assert_eq!(
+        ranked[0]["size"], 1_000,
+        "tamaño del más grande: {ranked:?}"
+    );
 
     // ---- tools/call stats -------------------------------------------------
     srv.send(&json!({
@@ -318,8 +339,7 @@ fn mcp_stdio_end_to_end() {
     let r = srv.read_reply("stats");
     assert_eq!(r["id"], 6, "respuesta stats: {r}");
     assert_eq!(
-        r["result"]["structuredContent"]["backend"],
-        "local",
+        r["result"]["structuredContent"]["backend"], "local",
         "stats debería reportar el backend local: {r}"
     );
 
@@ -328,8 +348,7 @@ fn mcp_stdio_end_to_end() {
     let r = srv.read_reply("metodo desconocido");
     assert_eq!(r["id"], 7, "respuesta metodo desconocido: {r}");
     assert_eq!(
-        r["error"]["code"],
-        -32601,
+        r["error"]["code"], -32601,
         "método desconocido debe dar -32601: {r}"
     );
 
@@ -337,8 +356,7 @@ fn mcp_stdio_end_to_end() {
     srv.send_raw("{\"jsonrpc\": \"2.0\", \"id\": 8, \"method\": ");
     let r = srv.read_reply("json invalido");
     assert_eq!(
-        r["error"]["code"],
-        -32700,
+        r["error"]["code"], -32700,
         "JSON inválido debe dar -32700: {r}"
     );
     assert!(

@@ -40,7 +40,10 @@ impl Service {
         let key = key_of(raw, sort, self.index.built_at as u64);
         let cached = {
             let cache = self.cache.lock().unwrap();
-            cache.iter().find(|(k, _)| *k == key).map(|(_, v)| Arc::clone(v))
+            cache
+                .iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, v)| Arc::clone(v))
         };
         let ids = match cached {
             Some(v) => v,
@@ -58,7 +61,11 @@ impl Service {
             }
         };
         let total = ids.len();
-        let end = if max == 0 { total } else { (offset + max).min(total) };
+        let end = if max == 0 {
+            total
+        } else {
+            (offset + max).min(total)
+        };
         let start = offset.min(total);
         (total, ids[start..end].to_vec())
     }
@@ -69,7 +76,14 @@ impl Searcher for Service {
         !self.index.is_empty()
     }
 
-    fn search(&self, search: &str, sort: u32, offset: u32, max: u32, _flags: u32) -> (u32, Vec<ReplyItem>) {
+    fn search(
+        &self,
+        search: &str,
+        sort: u32,
+        offset: u32,
+        max: u32,
+        _flags: u32,
+    ) -> (u32, Vec<ReplyItem>) {
         let sort = Sort::from_proto(sort);
         let (total, ids) = self.page(search, sort, offset as usize, max as usize);
         let items = ids
@@ -79,7 +93,11 @@ impl Searcher for Service {
                 ReplyItem {
                     name: self.index.name_string(id),
                     path: self.index.dir_path(id),
-                    size: if n.size == u64::MAX { None } else { Some(n.size) },
+                    size: if n.size == u64::MAX {
+                        None
+                    } else {
+                        Some(n.size)
+                    },
                     modified_ft: unix_to_filetime(n.mtime),
                     accessed_ft: unix_to_filetime(n.atime),
                     attributes: n.attrs,

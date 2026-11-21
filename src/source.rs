@@ -114,7 +114,10 @@ fn thread_count() -> usize {
             return n.clamp(1, 32);
         }
     }
-    std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).clamp(1, 8)
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .clamp(1, 8)
 }
 
 /// Parte el rango de la MFT en tramos alineados al tamaño de registro.
@@ -149,7 +152,8 @@ pub fn scan_mft(letter: char, mut emit: impl FnMut(RawRecord)) -> Result<ScanSta
         let vol = Arc::new(win::open_volume(letter).map_err(|e| {
             format!("no se pudo abrir la unidad {letter}: ({e}). Hace falta ejecutar como administrador")
         })?);
-        let vd = win::volume_data(&vol).map_err(|e| format!("FSCTL_GET_NTFS_VOLUME_DATA falló: {e}"))?;
+        let vd =
+            win::volume_data(&vol).map_err(|e| format!("FSCTL_GET_NTFS_VOLUME_DATA falló: {e}"))?;
         if vd.bytes_per_file_record_segment == 0 || vd.bytes_per_cluster == 0 {
             return Err("geometría NTFS inválida".into());
         }
@@ -170,8 +174,17 @@ pub fn scan_mft(letter: char, mut emit: impl FnMut(RawRecord)) -> Result<ScanSta
 
     if chunks.len() <= 1 {
         let mut out = Vec::new();
-        scan_range(letter, &runs, cluster, 0, total_len, rec_size, 0, &mut |r| out.push(r))
-            .map_err(|e| format!("lectura de la MFT falló: {e}"))?;
+        scan_range(
+            letter,
+            &runs,
+            cluster,
+            0,
+            total_len,
+            rec_size,
+            0,
+            &mut |r| out.push(r),
+        )
+        .map_err(|e| format!("lectura de la MFT falló: {e}"))?;
         for r in out {
             stats.used += 1;
             emit(r);
@@ -197,12 +210,21 @@ pub fn scan_mft(letter: char, mut emit: impl FnMut(RawRecord)) -> Result<ScanSta
                     let _ = tx.send((std::mem::take(batch), std::mem::take(local)));
                 }
             };
-            let res = scan_range(letter, &runs, cluster, offset, len, rec_size, offset, &mut |r| {
-                batch.push(r);
-                if batch.len() >= 4096 {
-                    flush(&mut batch, &mut local);
-                }
-            });
+            let res = scan_range(
+                letter,
+                &runs,
+                cluster,
+                offset,
+                len,
+                rec_size,
+                offset,
+                &mut |r| {
+                    batch.push(r);
+                    if batch.len() >= 4096 {
+                        flush(&mut batch, &mut local);
+                    }
+                },
+            );
             match res {
                 Ok(st) => {
                     local.records += st.records;
@@ -357,7 +379,11 @@ fn to_record(entry: &MftEntry, data_size: Option<u64>) -> Option<RawRecord> {
         attrs = fname.flags.bits();
     }
     let is_dir = entry.is_dir();
-    let size = if is_dir { u64::MAX } else { data_size.unwrap_or(fname.logical_size) };
+    let size = if is_dir {
+        u64::MAX
+    } else {
+        data_size.unwrap_or(fname.logical_size)
+    };
 
     Some(RawRecord {
         frn: entry.header.record_number,

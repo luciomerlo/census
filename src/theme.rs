@@ -184,7 +184,10 @@ impl Theme {
             ("segsym", "seguisym.ttf", false),
         ] {
             if let Ok(bytes) = std::fs::read(dir.join(file)) {
-                fonts.font_data.insert(name.into(), std::sync::Arc::new(egui::FontData::from_owned(bytes)));
+                fonts.font_data.insert(
+                    name.into(),
+                    std::sync::Arc::new(egui::FontData::from_owned(bytes)),
+                );
                 if is_primary {
                     primary.push(name.into())
                 } else {
@@ -268,7 +271,11 @@ mod tests {
             let secondary = contrast_ratio(t.muted(), t.bg());
             let alt = contrast_ratio(t.text(), t.row_alt());
             assert!(body >= 7.0, "{:?}: texto/fondo {body:.1} < 7", t);
-            assert!(secondary >= 4.5, "{:?}: secundario/fondo {secondary:.1} < 4.5", t);
+            assert!(
+                secondary >= 4.5,
+                "{:?}: secundario/fondo {secondary:.1} < 4.5",
+                t
+            );
             assert!(alt >= 7.0, "{:?}: texto/fila alterna {alt:.1} < 7", t);
         }
     }
@@ -285,6 +292,9 @@ mod tests {
     fn contrast_theme_is_the_most_legible() {
         let dark = contrast_ratio(Theme::Dark.muted(), Theme::Dark.bg());
         let contrast = contrast_ratio(Theme::Contrast.muted(), Theme::Contrast.bg());
-        assert!(contrast > dark, "contraste ({contrast:.1}) debería superar al oscuro ({dark:.1})");
+        assert!(
+            contrast > dark,
+            "contraste ({contrast:.1}) debería superar al oscuro ({dark:.1})"
+        );
     }
 }

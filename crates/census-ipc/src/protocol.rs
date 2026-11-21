@@ -136,11 +136,13 @@ pub struct Reply {
 }
 
 fn u32_at(b: &[u8], at: usize) -> Option<u32> {
-    b.get(at..at + 4).map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
+    b.get(at..at + 4)
+        .map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
 }
 
 fn u64_at(b: &[u8], at: usize) -> Option<u64> {
-    b.get(at..at + 8).map(|s| u64::from_le_bytes([s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]]))
+    b.get(at..at + 8)
+        .map(|s| u64::from_le_bytes([s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]]))
 }
 
 /// Pedido: 7 `u32` y después la búsqueda en UTF-16 terminada en NUL.
@@ -289,8 +291,16 @@ pub fn parse_reply(buf: &[u8]) -> Option<Reply> {
             Some(String::from_utf16_lossy(&units))
         };
 
-        let name = if flags & req::NAME != 0 { read_str(&mut p)? } else { String::new() };
-        let path = if flags & (req::PATH | req::FULL_PATH) != 0 { read_str(&mut p)? } else { String::new() };
+        let name = if flags & req::NAME != 0 {
+            read_str(&mut p)?
+        } else {
+            String::new()
+        };
+        let path = if flags & (req::PATH | req::FULL_PATH) != 0 {
+            read_str(&mut p)?
+        } else {
+            String::new()
+        };
         let size = if flags & req::SIZE != 0 {
             let v = u64_at(buf, p)?;
             p += 8;
@@ -307,8 +317,16 @@ pub fn parse_reply(buf: &[u8]) -> Option<Reply> {
             *p += 8;
             Some(v)
         };
-        let modified_ft = if flags & req::DATE_MODIFIED != 0 { take8(&mut p)? } else { 0 };
-        let accessed_ft = if flags & req::DATE_ACCESSED != 0 { take8(&mut p)? } else { 0 };
+        let modified_ft = if flags & req::DATE_MODIFIED != 0 {
+            take8(&mut p)?
+        } else {
+            0
+        };
+        let accessed_ft = if flags & req::DATE_ACCESSED != 0 {
+            take8(&mut p)?
+        } else {
+            0
+        };
         let attributes = if flags & req::ATTRIBUTES != 0 {
             let v = u32_at(buf, p)?;
             p += 4;
@@ -316,7 +334,11 @@ pub fn parse_reply(buf: &[u8]) -> Option<Reply> {
         } else {
             0
         };
-        let run_count = if flags & req::RUN_COUNT != 0 { u32_at(buf, p)? } else { 0 };
+        let run_count = if flags & req::RUN_COUNT != 0 {
+            u32_at(buf, p)?
+        } else {
+            0
+        };
         items.push(ReplyItem {
             name,
             path,
@@ -329,7 +351,12 @@ pub fn parse_reply(buf: &[u8]) -> Option<Reply> {
             is_drive: f & item::DRIVE != 0,
         });
     }
-    Some(Reply { total, offset, flags, items })
+    Some(Reply {
+        total,
+        offset,
+        flags,
+        items,
+    })
 }
 
 #[cfg(test)]
@@ -389,7 +416,10 @@ mod tests {
     #[test]
     fn items_start_at_twenty() {
         // WizEverything lee las filas a partir del byte 20: no se puede mover.
-        let items = vec![item("a", "C:", Some(1), false), item("b", "C:", Some(2), false)];
+        let items = vec![
+            item("a", "C:", Some(1), false),
+            item("b", "C:", Some(2), false),
+        ];
         let raw = build_reply(2, 0, req::BASIC, &items);
         assert_eq!(HEADER_LEN, 20);
         for i in 0..2 {

@@ -100,7 +100,8 @@ impl Builder {
             Some(&i) => i,
             None => {
                 let off = self.names.len() as u32;
-                self.names.extend(format!("{}:", letter.to_ascii_uppercase()).encode_utf16());
+                self.names
+                    .extend(format!("{}:", letter.to_ascii_uppercase()).encode_utf16());
                 self.nodes.push(Node {
                     name_off: off,
                     name_len: 2,
@@ -115,7 +116,8 @@ impl Builder {
 
         // La raíz se muestra como unidad: nombre "C:", sin padre.
         let root_name_off = self.names.len() as u32;
-        self.names.extend(format!("{}:", letter.to_ascii_uppercase()).encode_utf16());
+        self.names
+            .extend(format!("{}:", letter.to_ascii_uppercase()).encode_utf16());
         self.nodes[root as usize].name_off = root_name_off;
         self.nodes[root as usize].name_len = 2;
         self.nodes[root as usize].flags |= F_DIR | F_ROOT;
@@ -165,10 +167,15 @@ impl Index {
         self.nodes.is_empty()
     }
 
+    /// Nombre en UTF-16. Un id fuera de rango o un offset corrupto devuelven
+    /// vacío en vez de paniquear: el índice también se carga de disco.
     pub fn name_utf16(&self, id: u32) -> &[u16] {
-        let n = self.nodes[id as usize];
+        let Some(n) = self.nodes.get(id as usize) else {
+            return &[];
+        };
         let off = n.name_off as usize;
-        &self.names[off..off + n.name_len as usize]
+        let end = off.saturating_add(n.name_len as usize);
+        self.names.get(off..end).unwrap_or(&[])
     }
 
     pub fn name_string(&self, id: u32) -> String {
@@ -176,24 +183,36 @@ impl Index {
     }
 
     pub fn is_dir(&self, id: u32) -> bool {
-        self.nodes[id as usize].flags & F_DIR != 0
+        self.nodes
+            .get(id as usize)
+            .is_some_and(|n| n.flags & F_DIR != 0)
     }
 
     pub fn is_drive(&self, id: u32) -> bool {
-        self.nodes[id as usize].flags & F_ROOT != 0
+        self.nodes
+            .get(id as usize)
+            .is_some_and(|n| n.flags & F_ROOT != 0)
     }
 
-    /// Carpeta contenedora. Vacía para la raíz.
+    /// Padre de un nodo, si el id existe.
+    pub fn parent(&self, id: u32) -> Option<u32> {
+        self.nodes.get(id as usize).map(|n| n.parent)
+    }
+
+    /// Carpeta contenedora. Vacía para la raíz y para ids inválidos.
     pub fn dir_path(&self, id: u32) -> String {
         if self.is_drive(id) {
             return String::new();
         }
         let mut chain: Vec<u32> = Vec::with_capacity(8);
-        let mut cur = self.nodes[id as usize].parent;
+        let Some(mut cur) = self.parent(id) else {
+            return String::new();
+        };
         let mut guard = 0;
         while !self.is_drive(cur) && guard < MAX_DEPTH {
             chain.push(cur);
-            cur = self.nodes[cur as usize].parent;
+            let Some(p) = self.parent(cur) else { break };
+            cur = p;
             guard += 1;
         }
         let mut s = self.name_string(cur);
@@ -221,7 +240,10 @@ impl Index {
     /// Raiz de la unidad `C:` (o la que sea).
     pub fn root_for(&self, letter: char) -> Option<u32> {
         let want = format!("{}:", letter.to_ascii_uppercase());
-        self.roots.iter().copied().find(|&r| eq_ignore_case(self.name_utf16(r), &want))
+        self.roots
+            .iter()
+            .copied()
+            .find(|&r| eq_ignore_case(self.name_utf16(r), &want))
     }
 
     /// Resuelve `C:` a un id de nodo, bajando desde la raiz de esa unidad.
@@ -238,12 +260,13 @@ impl Index {
         }
         let mut cur = self.root_for(letter)?;
         for part in after[1..]
-            .split(|c: char| c == std::path::MAIN_SEPARATOR || c == '/')
+            .split([std::path::MAIN_SEPARATOR, '/'])
             .filter(|p| !p.is_empty())
         {
             let mut found = None;
             for i in 0..self.nodes.len() as u32 {
-                if self.nodes[i as usize].parent == cur && eq_ignore_case(self.name_utf16(i), part) {
+                if self.nodes[i as usize].parent == cur && eq_ignore_case(self.name_utf16(i), part)
+                {
                     found = Some(i);
                     break;
                 }
@@ -288,17 +311,30 @@ impl Index {
             }
         }
         let root = roots.first().copied().unwrap_or(0);
-        Index { letter, root, roots, nodes, names, stats, built_at }
+        Index {
+            letter,
+            root,
+            roots,
+            nodes,
+            names,
+            stats,
+            built_at,
+        }
     }
 
     pub fn is_under(&self, ancestor: u32, id: u32) -> bool {
         if ancestor == id {
             return true;
         }
+        if id as usize >= self.nodes.len() {
+            return false;
+        }
         let mut cur = id;
         let mut guard = 0;
         while !self.is_drive(cur) && guard < MAX_DEPTH {
-            let p = self.nodes[cur as usize].parent;
+            let Some(p) = self.parent(cur) else {
+                return false;
+            };
             if p == ancestor {
                 return true;
             }
@@ -329,7 +365,12 @@ pub fn contains_ignore_case(hay: &[u16], needle: &[u16]) -> bool {
     }
     let last = hay.len() - needle.len();
     for i in 0..=last {
-        if fold(hay[i]) == needle[0] && hay[i..i + needle.len()].iter().zip(needle).all(|(a, b)| fold(*a) == *b) {
+        if fold(hay[i]) == needle[0]
+            && hay[i..i + needle.len()]
+                .iter()
+                .zip(needle)
+                .all(|(a, b)| fold(*a) == *b)
+        {
             return true;
         }
     }
@@ -399,7 +440,13 @@ mod tests {
                 found.push(ix.dir_path(id));
             }
         }
-        assert_eq!(found, vec!["C:\\Users\\Lucio".to_string(), "C:\\Users\\Lucio".to_string()]);
+        assert_eq!(
+            found,
+            vec![
+                "C:\\Users\\Lucio".to_string(),
+                "C:\\Users\\Lucio".to_string()
+            ]
+        );
     }
 
     #[test]
@@ -414,7 +461,9 @@ mod tests {
         b.push(rec(99, 4242, "huerfano.txt", false, 1));
         let ix = b.finish('D');
         let id = ix.find_dir("D:").unwrap();
-        let orphan = (0..ix.len() as u32).find(|&i| ix.name_string(i) == "huerfano.txt").unwrap();
+        let orphan = (0..ix.len() as u32)
+            .find(|&i| ix.name_string(i) == "huerfano.txt")
+            .unwrap();
         assert_eq!(ix.nodes[orphan as usize].parent, id);
         assert_eq!(ix.full_path(orphan), "D:\\huerfano.txt");
     }
@@ -428,7 +477,6 @@ mod tests {
         assert!(!contains_ignore_case(&hay, &to_units_lower("docx")));
         assert!(contains_ignore_case(&hay, &[]));
     }
-
 
     #[test]
     fn merge_keeps_one_root_per_volume() {
@@ -456,10 +504,14 @@ mod tests {
         assert_eq!(ix.name_string(ix.root_for('D').unwrap()), "D:");
         assert_eq!(ix.find_dir("C:"), ix.root_for('C'));
         let sep = std::path::MAIN_SEPARATOR;
-        let nota = (0..ix.len() as u32).find(|&i| ix.name_string(i) == "nota.txt").unwrap();
+        let nota = (0..ix.len() as u32)
+            .find(|&i| ix.name_string(i) == "nota.txt")
+            .unwrap();
         assert_eq!(ix.full_path(nota), format!("C:{sep}Users{sep}nota.txt"));
         assert_eq!(ix.dir_path(nota), format!("C:{sep}Users"));
-        let datos = (0..ix.len() as u32).find(|&i| ix.name_string(i) == "datos.bin").unwrap();
+        let datos = (0..ix.len() as u32)
+            .find(|&i| ix.name_string(i) == "datos.bin")
+            .unwrap();
         assert_eq!(ix.full_path(datos), format!("D:{sep}datos.bin"));
         assert_eq!(ix.dir_path(datos), "D:");
 

@@ -72,7 +72,8 @@ pub fn quota(model: &str) -> Option<Quota> {
 /// se reponen en menos de un minuto).
 fn exhausted(model: &str) -> bool {
     quota(model).is_some_and(|q| {
-        q.req_left == Some(0) || (q.tok_left.is_some_and(|t| t < 1500) && q.at.elapsed().as_secs() < 60)
+        q.req_left == Some(0)
+            || (q.tok_left.is_some_and(|t| t < 1500) && q.at.elapsed().as_secs() < 60)
     })
 }
 
@@ -144,7 +145,7 @@ impl Transport for Groq {
 
 /// Parámetros (en miles de millones) que declara el nombre del modelo.
 fn params_b(id: &str) -> f32 {
-    id.split(|c: char| c == '-' || c == '/' || c == '_')
+    id.split(['-', '/', '_'])
         .filter_map(|p| p.strip_suffix('b').and_then(|n| n.parse::<f32>().ok()))
         .fold(0.0, f32::max)
 }
@@ -167,7 +168,10 @@ pub fn rank_models(available: &[String]) -> Vec<String> {
 }
 
 fn api_error(code: u16, v: &Value) -> String {
-    let msg = v.pointer("/error/message").and_then(Value::as_str).unwrap_or("");
+    let msg = v
+        .pointer("/error/message")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     match code {
         401 => "La clave de Groq no es válida / Invalid Groq API key".into(),
         429 | 413 => format!("Rate limited: {msg}"),
@@ -285,10 +289,22 @@ pub fn ask(
         if code != 200 {
             return Err(api_error(code, &v));
         }
-        let msg = v.pointer("/choices/0/message").cloned().unwrap_or(Value::Null);
-        let calls = msg.get("tool_calls").and_then(Value::as_array).cloned().unwrap_or_default();
+        let msg = v
+            .pointer("/choices/0/message")
+            .cloned()
+            .unwrap_or(Value::Null);
+        let calls = msg
+            .get("tool_calls")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
         if calls.is_empty() {
-            let text = msg.get("content").and_then(Value::as_str).unwrap_or("").trim().to_string();
+            let text = msg
+                .get("content")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim()
+                .to_string();
             return if text.is_empty() {
                 Err("Respuesta vacía (el modelo se cortó); probá de nuevo".into())
             } else {
@@ -301,7 +317,10 @@ pub fn ask(
             "tool_calls": calls,
         }));
         for call in &calls {
-            let name = call.pointer("/function/name").and_then(Value::as_str).unwrap_or("");
+            let name = call
+                .pointer("/function/name")
+                .and_then(Value::as_str)
+                .unwrap_or("");
             let args: Value = call
                 .pointer("/function/arguments")
                 .and_then(Value::as_str)
@@ -309,7 +328,10 @@ pub fn ask(
                 .unwrap_or_else(|| json!({}));
             let mut out = mcp::call(backend, name, &args).to_string();
             if out.len() > MAX_TOOL_CHARS {
-                let cut = (0..=MAX_TOOL_CHARS).rev().find(|&i| out.is_char_boundary(i)).unwrap_or(0);
+                let cut = (0..=MAX_TOOL_CHARS)
+                    .rev()
+                    .find(|&i| out.is_char_boundary(i))
+                    .unwrap_or(0);
                 out.truncate(cut);
                 out.push_str("…(truncated)");
             }
@@ -388,8 +410,14 @@ pub fn protect(plain: &str) -> Option<String> {
     use windows_sys::Win32::Foundation::LocalFree;
     use windows_sys::Win32::Security::Cryptography::{CryptProtectData, CRYPT_INTEGER_BLOB};
     let mut data = plain.as_bytes().to_vec();
-    let input = CRYPT_INTEGER_BLOB { cbData: data.len() as u32, pbData: data.as_mut_ptr() };
-    let mut out = CRYPT_INTEGER_BLOB { cbData: 0, pbData: std::ptr::null_mut() };
+    let input = CRYPT_INTEGER_BLOB {
+        cbData: data.len() as u32,
+        pbData: data.as_mut_ptr(),
+    };
+    let mut out = CRYPT_INTEGER_BLOB {
+        cbData: 0,
+        pbData: std::ptr::null_mut(),
+    };
     let ok = unsafe {
         CryptProtectData(
             &input,
@@ -420,8 +448,14 @@ pub fn unprotect(hex: &str) -> Option<String> {
     if data.is_empty() {
         return None;
     }
-    let input = CRYPT_INTEGER_BLOB { cbData: data.len() as u32, pbData: data.as_mut_ptr() };
-    let mut out = CRYPT_INTEGER_BLOB { cbData: 0, pbData: std::ptr::null_mut() };
+    let input = CRYPT_INTEGER_BLOB {
+        cbData: data.len() as u32,
+        pbData: data.as_mut_ptr(),
+    };
+    let mut out = CRYPT_INTEGER_BLOB {
+        cbData: 0,
+        pbData: std::ptr::null_mut(),
+    };
     let ok = unsafe {
         CryptUnprotectData(
             &input,
@@ -485,7 +519,10 @@ mod tests {
             Ok((200, self.models.clone()))
         }
         fn post(&self, path: &str, body: &Value) -> Result<(u16, Value), String> {
-            self.seen.lock().unwrap().push((path.to_string(), body.clone()));
+            self.seen
+                .lock()
+                .unwrap()
+                .push((path.to_string(), body.clone()));
             let mut r = self.replies.lock().unwrap();
             if r.is_empty() {
                 return Err("sin respuestas".into());
@@ -528,10 +565,15 @@ mod tests {
 
     #[test]
     fn ranking_prefers_the_known_list_then_bigger_models() {
-        let available: Vec<String> = ["whisper-large-v3", "llama-3.1-8b-instant", "qwen/qwen3-32b", "org/model-405b"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+        let available: Vec<String> = [
+            "whisper-large-v3",
+            "llama-3.1-8b-instant",
+            "qwen/qwen3-32b",
+            "org/model-405b",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
         let ranked = rank_models(&available);
         assert_eq!(ranked[0], "qwen/qwen3-32b");
         assert_eq!(ranked[1], "llama-3.1-8b-instant");
@@ -550,7 +592,8 @@ mod tests {
     #[test]
     fn a_plain_answer_finishes_in_one_step() {
         let fake = Fake::new(vec![answer("Hay 3 PDF.")]);
-        let (model, text) = ask_auto(&fake, None, "cuantos pdf hay", &backend(), true, &|_| {}).unwrap();
+        let (model, text) =
+            ask_auto(&fake, None, "cuantos pdf hay", &backend(), true, &|_| {}).unwrap();
         // El orden de PREFERRED manda: 70b versátil antes que qwen3-32b.
         assert_eq!(model, "llama-3.3-70b-versatile");
         assert_eq!(text, "Hay 3 PDF.");
@@ -558,13 +601,20 @@ mod tests {
         let seen = fake.seen.lock().unwrap();
         let body = &seen[0].1;
         assert!(body["tools"].as_array().unwrap().len() >= 5);
-        assert!(body["messages"][0]["content"].as_str().unwrap().contains("español"));
+        assert!(body["messages"][0]["content"]
+            .as_str()
+            .unwrap()
+            .contains("español"));
     }
 
     #[test]
     fn tool_calls_feed_results_back_into_the_conversation() {
-        let fake = Fake::new(vec![tool_call("count", json!({ "query": "" })), answer("0 archivos.")]);
-        let (_, text) = ask_auto(&fake, None, "cuantos archivos", &backend(), true, &|_| {}).unwrap();
+        let fake = Fake::new(vec![
+            tool_call("count", json!({ "query": "" })),
+            answer("0 archivos."),
+        ]);
+        let (_, text) =
+            ask_auto(&fake, None, "cuantos archivos", &backend(), true, &|_| {}).unwrap();
         assert_eq!(text, "0 archivos.");
         let seen = fake.seen.lock().unwrap();
         assert_eq!(seen.len(), 2);
@@ -583,8 +633,10 @@ mod tests {
             answer("listo"),
         ]);
         let tried = std::sync::Mutex::new(Vec::new());
-        let (model, text) =
-            ask_auto(&fake, None, "hola", &backend(), true, &|m| tried.lock().unwrap().push(m.to_string())).unwrap();
+        let (model, text) = ask_auto(&fake, None, "hola", &backend(), true, &|m| {
+            tried.lock().unwrap().push(m.to_string())
+        })
+        .unwrap();
         assert_eq!(text, "listo");
         let tried = tried.into_inner().unwrap();
         assert!(tried.len() >= 2, "debería haber reintentado: {tried:?}");

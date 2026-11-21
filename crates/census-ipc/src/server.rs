@@ -15,7 +15,14 @@ pub const COMPAT_CLASS: &str = "EVERYTHING_TASKBAR_NOTIFICATION";
 pub trait Searcher: Send + Sync + 'static {
     fn is_ready(&self) -> bool;
     /// Devuelve (total de coincidencias, página pedida).
-    fn search(&self, search: &str, sort: u32, offset: u32, max: u32, flags: u32) -> (u32, Vec<ReplyItem>);
+    fn search(
+        &self,
+        search: &str,
+        sort: u32,
+        offset: u32,
+        max: u32,
+        flags: u32,
+    ) -> (u32, Vec<ReplyItem>);
     /// Campos que este motor completa de verdad (ver `protocol::caps`).
     /// Por defecto, todos menos el historial de ejecución.
     fn caps(&self) -> u32 {
@@ -29,13 +36,15 @@ mod win {
     use std::ffi::c_void;
     use std::slice;
 
-    use windows_sys::Win32::Foundation::{GetLastError, ERROR_CLASS_ALREADY_EXISTS, HWND, LPARAM, LRESULT, WPARAM};
+    use windows_sys::Win32::Foundation::{
+        GetLastError, ERROR_CLASS_ALREADY_EXISTS, HWND, LPARAM, LRESULT, WPARAM,
+    };
     use windows_sys::Win32::System::DataExchange::COPYDATASTRUCT;
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        ChangeWindowMessageFilterEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
-        GetMessageW, MSGFLT_ALLOW, PostQuitMessage, RegisterClassW, SendMessageW, TranslateMessage, MSG, WM_COPYDATA,
-        WM_DESTROY, WM_USER, WNDCLASSW, WS_POPUP,
+        ChangeWindowMessageFilterEx, CreateWindowExW, DefWindowProcW, DestroyWindow,
+        DispatchMessageW, GetMessageW, PostQuitMessage, RegisterClassW, SendMessageW,
+        TranslateMessage, MSG, MSGFLT_ALLOW, WM_COPYDATA, WM_DESTROY, WM_USER, WNDCLASSW, WS_POPUP,
     };
 
     /// Mensajes que un cliente de integridad media puede mandarle a un
@@ -59,7 +68,12 @@ mod win {
         s.encode_utf16().chain(std::iter::once(0)).collect()
     }
 
-    unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    unsafe extern "system" fn wndproc(
+        hwnd: HWND,
+        msg: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
         match msg {
             WM_COPYDATA => {
                 if lparam == 0 {
@@ -69,12 +83,14 @@ mod win {
                 if cds.dwData != protocol::QUERY2W || cds.lpData.is_null() {
                     return 0;
                 }
-                let raw = unsafe { slice::from_raw_parts(cds.lpData as *const u8, cds.cbData as usize) };
+                let raw =
+                    unsafe { slice::from_raw_parts(cds.lpData as *const u8, cds.cbData as usize) };
                 let Some(req) = protocol::parse_request(raw) else {
                     return 0;
                 };
                 let reply = with_searcher(|s| {
-                    let (total, items) = s.search(&req.search, req.sort, req.offset, req.max, req.flags);
+                    let (total, items) =
+                        s.search(&req.search, req.sort, req.offset, req.max, req.flags);
                     // El `flags` de la respuesta dice qué campos vinieron de
                     // verdad: si el cliente pidió `run_count` y no lo tenemos,
                     // no se anuncia y no se escribe. Un cero no es un dato.
@@ -102,7 +118,9 @@ mod win {
                 }
                 1
             }
-            m if m == WM_USER + IS_DB_LOADED => with_searcher(|s| s.is_ready() as LRESULT).unwrap_or(0),
+            m if m == WM_USER + IS_DB_LOADED => {
+                with_searcher(|s| s.is_ready() as LRESULT).unwrap_or(0)
+            }
             // Capacidades del motor: qué campos completa y si los metadatos son
             // parciales. 0 = todavía no hay índice.
             m if m == WM_USER + CAPS => with_searcher(|s| s.caps() as LRESULT).unwrap_or(0),
@@ -206,7 +224,11 @@ mod win {
         for (_, hwnd) in &hwnds {
             unsafe { DestroyWindow(*hwnd) };
         }
-        Ok(hwnds.into_iter().map(|(name, _)| name).collect::<Vec<_>>().join(", "))
+        Ok(hwnds
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect::<Vec<_>>()
+            .join(", "))
     }
 }
 

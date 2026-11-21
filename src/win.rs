@@ -5,16 +5,19 @@
 use std::ffi::c_void;
 use std::io;
 
-use windows_sys::Win32::Foundation::{CloseHandle, GENERIC_READ, HANDLE, INVALID_HANDLE_VALUE, LUID};
+use windows_sys::Win32::Foundation::{
+    CloseHandle, GENERIC_READ, HANDLE, INVALID_HANDLE_VALUE, LUID,
+};
 use windows_sys::Win32::Security::{
-    AdjustTokenPrivileges, LookupPrivilegeValueW, LUID_AND_ATTRIBUTES, SE_PRIVILEGE_ENABLED, TOKEN_ADJUST_PRIVILEGES,
-    TOKEN_PRIVILEGES, TOKEN_QUERY,
+    AdjustTokenPrivileges, LookupPrivilegeValueW, LUID_AND_ATTRIBUTES, SE_PRIVILEGE_ENABLED,
+    TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES, TOKEN_QUERY,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    CreateFileW, ReadFile, SetFilePointerEx, FILE_BEGIN, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    CreateFileW, ReadFile, SetFilePointerEx, FILE_BEGIN, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    OPEN_EXISTING,
 };
-use windows_sys::Win32::System::IO::DeviceIoControl;
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+use windows_sys::Win32::System::IO::DeviceIoControl;
 
 pub const FSCTL_GET_NTFS_VOLUME_DATA: u32 = 0x0009_0064;
 
@@ -83,7 +86,10 @@ impl VolumeHandle {
                 return Err(io::Error::last_os_error());
             }
             if read == 0 {
-                return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "lectura corta del volumen"));
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "lectura corta del volumen",
+                ));
             }
             done += read as usize;
         }
@@ -131,7 +137,10 @@ pub fn volume_data(h: &VolumeHandle) -> io::Result<NtfsVolumeData> {
         return Err(io::Error::last_os_error());
     }
     if out.bytes_per_cluster == 0 || out.bytes_per_file_record_segment == 0 {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "geometría NTFS inválida"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "geometría NTFS inválida",
+        ));
     }
     Ok(out)
 }
@@ -140,23 +149,32 @@ pub fn volume_data(h: &VolumeHandle) -> io::Result<NtfsVolumeData> {
 pub fn enable_privilege(name: &str) -> bool {
     unsafe {
         let mut token: HANDLE = std::ptr::null_mut();
-        if OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &mut token) == 0 {
+        if OpenProcessToken(
+            GetCurrentProcess(),
+            TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
+            &mut token,
+        ) == 0
+        {
             return false;
         }
         let wname = wide(name);
-        let mut luid = LUID { LowPart: 0, HighPart: 0 };
+        let mut luid = LUID {
+            LowPart: 0,
+            HighPart: 0,
+        };
         if LookupPrivilegeValueW(std::ptr::null(), wname.as_ptr(), &mut luid) == 0 {
             CloseHandle(token);
             return false;
         }
-        let mut tp = TOKEN_PRIVILEGES {
+        let tp = TOKEN_PRIVILEGES {
             PrivilegeCount: 1,
             Privileges: [LUID_AND_ATTRIBUTES {
                 Luid: luid,
                 Attributes: SE_PRIVILEGE_ENABLED,
             }],
         };
-        let ok = AdjustTokenPrivileges(token, 0, &mut tp, 0, std::ptr::null_mut(), std::ptr::null_mut());
+        let ok =
+            AdjustTokenPrivileges(token, 0, &tp, 0, std::ptr::null_mut(), std::ptr::null_mut());
         let last = io::Error::last_os_error().raw_os_error().unwrap_or(0);
         CloseHandle(token);
         ok != 0 && last == 0
@@ -168,8 +186,14 @@ pub fn enable_privilege(name: &str) -> bool {
 pub fn work_area() -> (i32, i32) {
     use windows_sys::Win32::Foundation::RECT;
     use windows_sys::Win32::UI::WindowsAndMessaging::{SystemParametersInfoW, SPI_GETWORKAREA};
-    let mut r = RECT { left: 0, top: 0, right: 0, bottom: 0 };
-    let ok = unsafe { SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut r as *mut RECT as *mut c_void, 0) };
+    let mut r = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    let ok =
+        unsafe { SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut r as *mut RECT as *mut c_void, 0) };
     let w = r.right - r.left;
     let h = r.bottom - r.top;
     if ok != 0 && w > 0 && h > 0 {

@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Formato
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (sin warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Tests (con chequeo de overflow)
+        run: cargo test --workspace
+        env:
+          RUSTFLAGS: "-C overflow-checks=on"
+
+      - name: Release
+        run: cargo build --workspace --release
+
+  audit:
+    # Avisos de seguridad (RUSTSEC) en las dependencias. Equivale a `cargo audit`,
+    # que localmente no se puede instalar dentro del límite de tiempo del agente.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

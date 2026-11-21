@@ -80,13 +80,21 @@ fn cached_snapshot(args: &Args) -> Option<(Arc<Index>, String)> {
         return None;
     }
     let path = census::snapshot::default_path()?;
-    let age = std::fs::metadata(&path).ok()?.modified().ok()?.elapsed().ok()?;
+    let age = std::fs::metadata(&path)
+        .ok()?
+        .modified()
+        .ok()?
+        .elapsed()
+        .ok()?;
     if age.as_secs() > max_age {
         return None;
     }
     let ix = census::snapshot::load(&path).ok()?;
     let mut have: Vec<char> = ix.roots.iter().map(|&r| ix.letter_of(r)).collect();
-    let mut want: Vec<char> = census::volumes::selected().iter().map(|d| d.letter()).collect();
+    let mut want: Vec<char> = census::volumes::selected()
+        .iter()
+        .map(|d| d.letter())
+        .collect();
     have.sort_unstable();
     want.sort_unstable();
     if have != want {
@@ -111,7 +119,13 @@ fn system_drive() -> char {
 fn load(args: &Args) -> Result<(Arc<Index>, String), String> {
     if let Some(root) = args.get("root") {
         let (ix, st) = census::index_dir(std::path::Path::new(root))?;
-        Ok((ix, format!("dir {root} ({} registros en {} ms)", st.records, st.elapsed_ms)))
+        Ok((
+            ix,
+            format!(
+                "dir {root} ({} registros en {} ms)",
+                st.records, st.elapsed_ms
+            ),
+        ))
     } else if let Some(letter) = args.get("volume").and_then(|v| v.chars().next()) {
         let (ix, st) = census::index_volume(letter)?;
         Ok((
@@ -165,7 +179,8 @@ fn cmd_index(args: &Args) -> Result<(), String> {
     let (ix, note) = load(args)?;
     let ms = t0.elapsed().as_millis().max(1);
     let per_sec = ix.len() as f64 / (ms as f64 / 1000.0);
-    let ram = (ix.nodes.len() * std::mem::size_of::<census::Node>() + ix.names.len() * 2) as f64 / (1024.0 * 1024.0);
+    let ram = (ix.nodes.len() * std::mem::size_of::<census::Node>() + ix.names.len() * 2) as f64
+        / (1024.0 * 1024.0);
 
     if args.has("json") {
         println!(
@@ -207,12 +222,23 @@ fn cmd_query(args: &Args) -> Result<(), String> {
     let t0 = Instant::now();
     let (total, ids) = service.page(&expr, sort, offset, limit);
     let ms = t0.elapsed().as_secs_f64() * 1000.0;
-    println!("{total} resultados en {ms:.1} ms (mostrando {} desde {offset})", ids.len());
+    println!(
+        "{total} resultados en {ms:.1} ms (mostrando {} desde {offset})",
+        ids.len()
+    );
     for id in ids {
         let n = &ix.nodes[id as usize];
-        let size = if n.size == u64::MAX { String::from("<dir>") } else { n.size.to_string() };
+        let size = if n.size == u64::MAX {
+            String::from("<dir>")
+        } else {
+            n.size.to_string()
+        };
         let ts = chrono::DateTime::from_timestamp(n.mtime, 0)
-            .map(|d| d.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
+            .map(|d| {
+                d.with_timezone(&chrono::Local)
+                    .format("%Y-%m-%d %H:%M")
+                    .to_string()
+            })
             .unwrap_or_default();
         println!("{size:>12}  {ts}  {}", ix.full_path(id));
     }
@@ -242,7 +268,8 @@ fn cmd_bench(args: &Args) -> Result<(), String> {
         "carga: mejor {best:.0} ms, mediana {med:.0} ms, {:.0} nodos/s, {} nodos, RAM {:.1} MB",
         ix.len() as f64 / (med / 1000.0),
         ix.len(),
-        (ix.len() * std::mem::size_of::<census::Node>() + ix.names.len() * 2) as f64 / (1024.0 * 1024.0)
+        (ix.len() * std::mem::size_of::<census::Node>() + ix.names.len() * 2) as f64
+            / (1024.0 * 1024.0)
     );
 
     // 2) Consultas: las cinco formas que emiten las apps.
@@ -268,7 +295,11 @@ fn cmd_bench(args: &Args) -> Result<(), String> {
         let t1 = Instant::now();
         let _ = service.page(q, Sort::NameAsc, 250_000, 250_000);
         let warm = t1.elapsed().as_secs_f64() * 1000.0;
-        let label: String = if q.is_empty() { "(todo)".into() } else { (*q).clone() };
+        let label: String = if q.is_empty() {
+            "(todo)".into()
+        } else {
+            (*q).clone()
+        };
         println!("{label:<42} {total:>10}  {cold:>7.1} ({warm:.1} pag)");
     }
     Ok(())
@@ -281,15 +312,18 @@ fn cmd_ask(args: &Args) -> Result<(), String> {
         return Err("falta la pregunta: census ask \"los pdf mas grandes de este mes\"".into());
     }
     let Some(key) = census::ai::load_key() else {
-        return Err("falta la clave de Groq: definí GROQ_API_KEY o corré `census key <clave>`".into());
+        return Err(
+            "falta la clave de Groq: definí GROQ_API_KEY o corré `census key <clave>`".into(),
+        );
     };
     let (ix, note) = load(args)?;
     eprintln!("{note}");
     let service = std::sync::Arc::new(census::Service::new(std::sync::Arc::clone(&ix)));
     let backend = census::mcp::Backend::Local { index: ix, service };
     let groq = census::ai::Groq::new(key);
-    let (model, answer) =
-        census::ai::ask_auto(&groq, None, &question, &backend, true, &|m| eprintln!("[probando {m}]"))?;
+    let (model, answer) = census::ai::ask_auto(&groq, None, &question, &backend, true, &|m| {
+        eprintln!("[probando {m}]")
+    })?;
     println!("{answer}");
     eprintln!("({model})");
     Ok(())
@@ -309,7 +343,10 @@ fn cmd_key(args: &Args) -> Result<(), String> {
             Ok(())
         }
         _ => {
-            println!("clave configurada: {}", if census::ai::has_key() { "si" } else { "no" });
+            println!(
+                "clave configurada: {}",
+                if census::ai::has_key() { "si" } else { "no" }
+            );
             println!("uso: census key <clave-de-groq>   |   census key --clear");
             Ok(())
         }
@@ -375,8 +412,8 @@ fn cmd_drives() -> Result<(), String> {
         println!("excluidas: {}", excluded.join(", "));
     }
     println!(
-        "{:<4} {:<8} {:<9} {:>10} {:>10}  {:<9} {}",
-        "unidad", "tipo", "fs", "total", "libre", "indexa", "como"
+        "{:<4} {:<8} {:<9} {:>10} {:>10}  {:<9} como",
+        "unidad", "tipo", "fs", "total", "libre", "indexa"
     );
     for (d, on) in census::volumes::roster() {
         let how = if !on {
@@ -466,7 +503,11 @@ fn cmd_serve(args: &Args) -> Result<(), String> {
 
 fn main() -> ExitCode {
     let args = Args::parse(std::env::args().skip(1).collect());
-    let cmd = args.positional.first().cloned().unwrap_or_else(|| "help".into());
+    let cmd = args
+        .positional
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "help".into());
     let rest = || Args {
         flags: args.flags.clone(),
         positional: args.positional[1..].to_vec(),

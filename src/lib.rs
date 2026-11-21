@@ -1,15 +1,15 @@
 //! Índice instantáneo de archivos para Windows.
 
 pub mod ai;
-pub mod index;
-pub mod mcp;
 #[cfg(feature = "gui")]
 pub mod gui;
-#[cfg(feature = "gui")]
-pub mod theme;
+pub mod index;
+pub mod mcp;
 pub mod query;
 pub mod service;
 pub mod snapshot;
+#[cfg(feature = "gui")]
+pub mod theme;
 pub mod time;
 pub mod volumes;
 

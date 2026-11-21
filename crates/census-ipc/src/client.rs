@@ -1,6 +1,6 @@
 //! Cliente IPC: manda QUERY2W y espera la respuesta por `WM_COPYDATA`.
 
-use crate::protocol::{self, CAPS, Request};
+use crate::protocol::{self, Request, CAPS};
 use crate::server::{CLASS, COMPAT_CLASS};
 
 #[cfg(windows)]
@@ -14,8 +14,9 @@ mod win {
     use windows_sys::Win32::System::DataExchange::COPYDATASTRUCT;
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, FindWindowW, PeekMessageW, RegisterClassW,
-        SendMessageW, TranslateMessage, HWND_MESSAGE, MSG, PM_REMOVE, WM_COPYDATA, WM_USER, WNDCLASSW,
+        CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, FindWindowW,
+        PeekMessageW, RegisterClassW, SendMessageW, TranslateMessage, HWND_MESSAGE, MSG, PM_REMOVE,
+        WM_COPYDATA, WM_USER, WNDCLASSW,
     };
 
     use crate::protocol::IS_DB_LOADED;
@@ -42,11 +43,18 @@ mod win {
         static REPLY: RefCell<Option<Vec<u8>>> = const { RefCell::new(None) };
     }
 
-    unsafe extern "system" fn reply_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    unsafe extern "system" fn reply_proc(
+        hwnd: HWND,
+        msg: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
         if msg == WM_COPYDATA && lparam != 0 {
             let cds = unsafe { &*(lparam as *const COPYDATASTRUCT) };
             if !cds.lpData.is_null() {
-                let data = unsafe { std::slice::from_raw_parts(cds.lpData as *const u8, cds.cbData as usize) };
+                let data = unsafe {
+                    std::slice::from_raw_parts(cds.lpData as *const u8, cds.cbData as usize)
+                };
                 REPLY.with(|r| *r.borrow_mut() = Some(data.to_vec()));
                 return 1;
             }
@@ -129,7 +137,14 @@ mod win {
         }
 
         /// Manda la consulta y devuelve la respuesta cruda (bytes del `WM_COPYDATA`).
-        pub fn query_raw(&mut self, search: &str, sort: u32, offset: u32, max: u32, flags: u32) -> Option<Vec<u8>> {
+        pub fn query_raw(
+            &mut self,
+            search: &str,
+            sort: u32,
+            offset: u32,
+            max: u32,
+            flags: u32,
+        ) -> Option<Vec<u8>> {
             let target = find_server();
             if target.is_null() {
                 return None;
@@ -152,7 +167,14 @@ mod win {
                 lpData: buf.as_mut_ptr() as *mut c_void,
             };
             REPLY.with(|r| *r.borrow_mut() = None);
-            let ok = unsafe { SendMessageW(target, WM_COPYDATA, self.reply as usize, &cds as *const _ as isize) };
+            let ok = unsafe {
+                SendMessageW(
+                    target,
+                    WM_COPYDATA,
+                    self.reply as usize,
+                    &cds as *const _ as isize,
+                )
+            };
             if ok == 0 {
                 return None;
             }
@@ -178,7 +200,12 @@ mod win {
         }
 
         /// Consulta completa paginando hasta agotar `total`.
-        pub fn query_all(&mut self, search: &str, sort: u32, page: u32) -> Result<protocol::Reply, String> {
+        pub fn query_all(
+            &mut self,
+            search: &str,
+            sort: u32,
+            page: u32,
+        ) -> Result<protocol::Reply, String> {
             let mut out = protocol::Reply::default();
             let mut offset = 0u32;
             let mut first = true;
@@ -186,7 +213,8 @@ mod win {
                 let raw = self
                     .query_raw(search, sort, offset, page, protocol::req::BASIC)
                     .ok_or_else(|| "el servidor no respondió".to_string())?;
-                let reply = protocol::parse_reply(&raw).ok_or_else(|| "respuesta IPC inválida".to_string())?;
+                let reply = protocol::parse_reply(&raw)
+                    .ok_or_else(|| "respuesta IPC inválida".to_string())?;
                 if first {
                     out.total = reply.total;
                     out.flags = reply.flags;

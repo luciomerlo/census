@@ -37,7 +37,10 @@ pub fn parse_runlist(bytes: &[u8]) -> Vec<Run> {
         i += len_size;
 
         if off_size == 0 {
-            runs.push(Run { lcn: None, clusters });
+            runs.push(Run {
+                lcn: None,
+                clusters,
+            });
             continue;
         }
         let mut raw: u64 = 0;
@@ -53,7 +56,10 @@ pub fn parse_runlist(bytes: &[u8]) -> Vec<Run> {
             raw as i64
         };
         lcn += delta;
-        runs.push(Run { lcn: Some(lcn), clusters });
+        runs.push(Run {
+            lcn: Some(lcn),
+            clusters,
+        });
     }
     runs
 }
@@ -77,7 +83,14 @@ impl RunsReader {
             starts.push(acc);
             acc += r.clusters * cluster;
         }
-        Self { vol, runs, starts, cluster, len: len.min(acc), pos: 0 }
+        Self {
+            vol,
+            runs,
+            starts,
+            cluster,
+            len: len.min(acc),
+            pos: 0,
+        }
     }
 
     pub fn len_bytes(&self) -> u64 {
@@ -147,7 +160,13 @@ mod tests {
     fn single_run() {
         // header 0x11: 1 byte de largo, 1 byte de offset; largo 0x28, lcn 0x0c
         let runs = parse_runlist(&[0x11, 0x28, 0x0c, 0x00]);
-        assert_eq!(runs, vec![Run { lcn: Some(12), clusters: 40 }]);
+        assert_eq!(
+            runs,
+            vec![Run {
+                lcn: Some(12),
+                clusters: 40
+            }]
+        );
     }
 
     #[test]
@@ -157,8 +176,14 @@ mod tests {
         assert_eq!(
             runs,
             vec![
-                Run { lcn: Some(32), clusters: 16 },
-                Run { lcn: Some(30), clusters: 8 },
+                Run {
+                    lcn: Some(32),
+                    clusters: 16
+                },
+                Run {
+                    lcn: Some(30),
+                    clusters: 8
+                },
             ]
         );
     }
@@ -168,7 +193,16 @@ mod tests {
         let runs = parse_runlist(&[0x01, 0x05, 0x11, 0x02, 0x03, 0x00]);
         assert_eq!(
             runs,
-            vec![Run { lcn: None, clusters: 5 }, Run { lcn: Some(3), clusters: 2 }]
+            vec![
+                Run {
+                    lcn: None,
+                    clusters: 5
+                },
+                Run {
+                    lcn: Some(3),
+                    clusters: 2
+                }
+            ]
         );
     }
 
@@ -176,7 +210,13 @@ mod tests {
     fn two_byte_offsets() {
         // offset de 2 bytes con signo: 0x1234
         let runs = parse_runlist(&[0x21, 0x04, 0x34, 0x12, 0x00]);
-        assert_eq!(runs, vec![Run { lcn: Some(0x1234), clusters: 4 }]);
+        assert_eq!(
+            runs,
+            vec![Run {
+                lcn: Some(0x1234),
+                clusters: 4
+            }]
+        );
     }
 
     #[test]

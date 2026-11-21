@@ -124,9 +124,16 @@ pub fn census_settings_path() -> Option<PathBuf> {
 /// Lee `excluded_drives` de un `settings.ini` con el formato de WizEverything.
 pub fn parse_excluded(text: &str) -> Vec<String> {
     for line in text.lines() {
-        let Some((k, v)) = line.split_once('=') else { continue };
+        let Some((k, v)) = line.split_once('=') else {
+            continue;
+        };
         if k.trim() == "excluded_drives" {
-            return v.split(',').map(str::trim).filter(|d| !d.is_empty()).map(String::from).collect();
+            return v
+                .split(',')
+                .map(str::trim)
+                .filter(|d| !d.is_empty())
+                .map(String::from)
+                .collect();
         }
     }
     Vec::new()
@@ -202,17 +209,16 @@ mod imp {
                 let end = b.iter().position(|u| *u == 0).unwrap_or(b.len());
                 String::from_utf16_lossy(&b[..end])
             };
-            let (label, fs) = if ok != 0 { (utf16(&label_buf), utf16(&fs_buf)) } else { (String::new(), String::new()) };
+            let (label, fs) = if ok != 0 {
+                (utf16(&label_buf), utf16(&fs_buf))
+            } else {
+                (String::new(), String::new())
+            };
 
             let mut free: u64 = 0;
             let mut total: u64 = 0;
             unsafe {
-                GetDiskFreeSpaceExW(
-                    root.as_ptr(),
-                    std::ptr::null_mut(),
-                    &mut total,
-                    &mut free,
-                );
+                GetDiskFreeSpaceExW(root.as_ptr(), std::ptr::null_mut(), &mut total, &mut free);
             }
 
             out.push(Drive {
@@ -288,7 +294,11 @@ pub fn save_excluded(names: &[String]) -> Result<(), String> {
 }
 
 pub fn describe(d: &Drive) -> String {
-    let label = if d.label.is_empty() { String::new() } else { format!(" {}", d.label) };
+    let label = if d.label.is_empty() {
+        String::new()
+    } else {
+        format!(" {}", d.label)
+    };
     format!("{} ({}{})", d.name, d.fs.to_lowercase(), label)
 }
 
@@ -331,7 +341,10 @@ mod tests {
         assert!(!d("E:", "exFAT", DriveKind::Removable, "").is_ntfs());
         // La nube se deduce de la etiqueta y se indexa recorriendo carpetas.
         assert!(d("G:", "NTFS", DriveKind::Fixed, "Google Drive").is_cloud());
-        assert_eq!(d("G:", "NTFS", DriveKind::Fixed, "Google Drive").kind(), DriveKind::Cloud);
+        assert_eq!(
+            d("G:", "NTFS", DriveKind::Fixed, "Google Drive").kind(),
+            DriveKind::Cloud
+        );
         assert!(!d("G:", "NTFS", DriveKind::Fixed, "Google Drive").uses_mft());
         assert!(d("G:", "NTFS", DriveKind::Fixed, "Google Drive").is_indexable());
         // Red: entra en el índice, sin MFT.

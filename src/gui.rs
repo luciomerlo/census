@@ -142,7 +142,11 @@ impl GuiApp {
             human_size(n.size)
         };
         let date = chrono::DateTime::from_timestamp(n.mtime, 0)
-            .map(|d| d.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
+            .map(|d| {
+                d.with_timezone(&chrono::Local)
+                    .format("%Y-%m-%d %H:%M")
+                    .to_string()
+            })
             .unwrap_or_default();
         (name, path, size, date, is_dir)
     }
@@ -155,7 +159,8 @@ impl GuiApp {
 
     fn header(&self, ui: &mut egui::Ui) {
         let width = ui.available_width();
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(width, self.theme.row_h()), Sense::hover());
+        let (rect, _) =
+            ui.allocate_exact_size(Vec2::new(width, self.theme.row_h()), Sense::hover());
         ui.painter().rect_filled(rect, 0.0, self.theme.panel());
         let font = FontId::monospace(self.theme.font_header());
         for (col, label) in [
@@ -187,10 +192,22 @@ impl GuiApp {
         let w = row.width();
         let pad = 10.0;
         match col {
-            Column::Name => Rect::from_min_max(row.left_top() + Vec2::new(pad, 0.0), row.left_top() + Vec2::new(w * 0.40, row.height())),
-            Column::Path => Rect::from_min_max(row.left_top() + Vec2::new(w * 0.40 + pad, 0.0), row.left_top() + Vec2::new(w * 0.72, row.height())),
-            Column::Size => Rect::from_min_max(row.left_top() + Vec2::new(w * 0.72, 0.0), row.left_top() + Vec2::new(w * 0.835, row.height())),
-            Column::Modified => Rect::from_min_max(row.left_top() + Vec2::new(w * 0.84, 0.0), row.right_top() - Vec2::new(pad, 0.0)),
+            Column::Name => Rect::from_min_max(
+                row.left_top() + Vec2::new(pad, 0.0),
+                row.left_top() + Vec2::new(w * 0.40, row.height()),
+            ),
+            Column::Path => Rect::from_min_max(
+                row.left_top() + Vec2::new(w * 0.40 + pad, 0.0),
+                row.left_top() + Vec2::new(w * 0.72, row.height()),
+            ),
+            Column::Size => Rect::from_min_max(
+                row.left_top() + Vec2::new(w * 0.72, 0.0),
+                row.left_top() + Vec2::new(w * 0.835, row.height()),
+            ),
+            Column::Modified => Rect::from_min_max(
+                row.left_top() + Vec2::new(w * 0.84, 0.0),
+                row.right_top() - Vec2::new(pad, 0.0),
+            ),
         }
     }
 
@@ -215,7 +232,7 @@ impl GuiApp {
             let is_sel = selected == Some(id);
             let bg = if is_sel {
                 theme.selection()
-            } else if visual_row % 2 == 0 {
+            } else if visual_row.is_multiple_of(2) {
                 theme.row_alt()
             } else {
                 Color32::TRANSPARENT
@@ -242,14 +259,20 @@ impl GuiApp {
                 theme.muted(),
             );
             ui.painter().text(
-                egui::pos2(self.column_rect(rect, Column::Size).right(), rect.center().y),
+                egui::pos2(
+                    self.column_rect(rect, Column::Size).right(),
+                    rect.center().y,
+                ),
                 Align2::RIGHT_CENTER,
                 size,
                 font_small.clone(),
                 theme.muted(),
             );
             ui.painter().text(
-                egui::pos2(self.column_rect(rect, Column::Modified).right(), rect.center().y),
+                egui::pos2(
+                    self.column_rect(rect, Column::Modified).right(),
+                    rect.center().y,
+                ),
                 Align2::RIGHT_CENTER,
                 date,
                 font_small.clone(),
@@ -388,7 +411,7 @@ impl GuiApp {
                 ui.add_space(8.0);
                 for (d, on) in &roster {
                     let mut checked = *on;
-                    let name = RichText::new(format!("{}", d.name)).size(theme.font_name()).strong().color(theme.text());
+                    let name = RichText::new(d.name.to_string()).size(theme.font_name()).strong().color(theme.text());
                     let kind = d.kind();
                     let kind_color = if matches!(kind, crate::DriveKind::Cloud) {
                         theme.accent()
@@ -599,7 +622,11 @@ impl GuiApp {
             );
             if let Some(m) = &self.ai_model {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(RichText::new(m).size(theme.font_small()).color(theme.accent()));
+                    ui.label(
+                        RichText::new(m)
+                            .size(theme.font_small())
+                            .color(theme.accent()),
+                    );
                 });
             }
         });
@@ -616,17 +643,25 @@ impl GuiApp {
             return;
         }
         if let Some(e) = &self.ai_error {
-            ui.label(RichText::new(e).size(theme.font_small()).color(theme.accent()));
+            ui.label(
+                RichText::new(e)
+                    .size(theme.font_small())
+                    .color(theme.accent()),
+            );
             return;
         }
         if let Some(a) = &self.ai_answer {
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                ui.add(
-                    egui::Label::new(RichText::new(a).size(theme.font_name()).color(theme.text()))
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(a).size(theme.font_name()).color(theme.text()),
+                        )
                         .wrap()
                         .selectable(true),
-                );
-            });
+                    );
+                });
         }
     }
 
@@ -722,7 +757,11 @@ impl eframe::App for GuiApp {
         self.status_bar(ctx);
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::NONE.fill(self.theme.bg()).inner_margin(egui::Margin::symmetric(12, 8)))
+            .frame(
+                egui::Frame::NONE
+                    .fill(self.theme.bg())
+                    .inner_margin(egui::Margin::symmetric(12, 8)),
+            )
             .show(ctx, |ui| {
                 if self.ai_mode {
                     self.ai_panel(ui);
@@ -748,7 +787,11 @@ impl eframe::App for GuiApp {
 fn welcome(ui: &mut egui::Ui, index: &Index, theme: Theme) {
     ui.add_space(40.0);
     ui.vertical_centered(|ui| {
-        ui.label(RichText::new("Escribí para buscar").size(theme.font_title() + 3.0).color(theme.text()));
+        ui.label(
+            RichText::new("Escribí para buscar")
+                .size(theme.font_title() + 3.0)
+                .color(theme.text()),
+        );
         ui.add_space(6.0);
         ui.label(
             RichText::new(format!(
@@ -765,8 +808,17 @@ fn welcome(ui: &mut egui::Ui, index: &Index, theme: Theme) {
             ("file: size:>100mb", "Archivos de más de 100 MB"),
             ("rc:>=2026-01-01T00:00:00", "Lo cambiado en el último año"),
         ] {
-            ui.label(RichText::new(q).monospace().size(12.0).color(theme.accent()));
-            ui.label(RichText::new(what).size(theme.font_small()).color(theme.muted()));
+            ui.label(
+                RichText::new(q)
+                    .monospace()
+                    .size(12.0)
+                    .color(theme.accent()),
+            );
+            ui.label(
+                RichText::new(what)
+                    .size(theme.font_small())
+                    .color(theme.muted()),
+            );
             ui.add_space(8.0);
         }
     });

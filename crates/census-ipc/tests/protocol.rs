@@ -30,7 +30,10 @@ fn it(name: &str, path: &str, size: Option<u64>, dir: bool) -> ReplyItem {
 
 #[test]
 fn header_is_20_bytes_and_rows_start_right_after() {
-    let items = vec![it("a.txt", "C:\\x", Some(1), false), it("b.txt", "C:\\x", Some(2), false)];
+    let items = vec![
+        it("a.txt", "C:\\x", Some(1), false),
+        it("b.txt", "C:\\x", Some(2), false),
+    ];
     let raw = protocol::build_reply(7, 0, req::BASIC, &items);
 
     assert_eq!(protocol::HEADER_LEN, 20);
@@ -39,7 +42,7 @@ fn header_is_20_bytes_and_rows_start_right_after() {
     assert_eq!(u32_at(&raw, 12), req::BASIC); // flags
 
     // Cada fila: 8 bytes. La fila i arranca en 20 + 8*i.
-    for i in 0..2 {
+    for (i, _) in (0..2).enumerate() {
         let flags = u32_at(&raw, 20 + i * 8);
         let off = u32_at(&raw, 20 + i * 8 + 4) as usize;
         assert_eq!(flags, 0, "archivo normal no lleva flags");
@@ -57,7 +60,10 @@ fn header_is_20_bytes_and_rows_start_right_after() {
 
 #[test]
 fn first_name_starts_after_table_plus_length_prefix() {
-    let items = vec![it("uno", "C:", Some(1), false), it("dos", "C:", Some(2), false)];
+    let items = vec![
+        it("uno", "C:", Some(1), false),
+        it("dos", "C:", Some(2), false),
+    ];
     let raw = protocol::build_reply(2, 0, req::NAME | req::PATH | req::SIZE, &items);
     // El offset de la fila apunta al prefijo de largo del nombre...
     let first = u32_at(&raw, 20 + 4) as usize;
@@ -67,7 +73,10 @@ fn first_name_starts_after_table_plus_length_prefix() {
     let declared = u32_at(&raw, first) as usize;
     assert_eq!(declared, items[0].name.encode_utf16().count());
     let second = first + 4 + declared * 2 + 2;
-    assert_eq!(u32_at(&raw, second) as usize, items[0].path.encode_utf16().count());
+    assert_eq!(
+        u32_at(&raw, second) as usize,
+        items[0].path.encode_utf16().count()
+    );
     let sizes_at = second + 4 + items[0].path.encode_utf16().count() * 2 + 2;
     assert_eq!(u64_at(&raw, sizes_at), 1);
 }
@@ -83,7 +92,10 @@ fn only_requested_fields_travel() {
     assert_eq!(back.items[0].size, None);
     assert_eq!(back.items[0].modified_ft, 0);
     // nombre: 4 + 2*len + 2
-    assert_eq!(raw.len(), 20 + 8 + 4 + "solo-nombre".encode_utf16().count() * 2 + 2);
+    assert_eq!(
+        raw.len(),
+        20 + 8 + 4 + "solo-nombre".encode_utf16().count() * 2 + 2
+    );
 
     let raw = protocol::build_reply(1, 0, req::SIZE, &items);
     let back = protocol::parse_reply(&raw).unwrap();
@@ -111,7 +123,13 @@ fn unknown_size_is_a_roundtrip() {
 
 #[test]
 fn unicode_names_roundtrip() {
-    let names = ["ñandú.txt", "中文文件.doc", "🚀 lanzamiento.pdf", "", &"x".repeat(300)];
+    let names = [
+        "ñandú.txt",
+        "中文文件.doc",
+        "🚀 lanzamiento.pdf",
+        "",
+        &"x".repeat(300),
+    ];
     for n in names {
         let items = vec![it(n, "C:\\carpeta", Some(1), false)];
         let raw = protocol::build_reply(1, 0, req::BASIC, &items);
@@ -144,10 +162,22 @@ fn truncated_replies_return_none_instead_of_panicking() {
     let raw = protocol::build_reply(1, 0, req::BASIC, &items);
 
     assert!(protocol::parse_reply(&[0u8; 19]).is_none());
-    assert!(protocol::parse_reply(&raw[..8]).is_none(), "corta antes de la tabla");
-    assert!(protocol::parse_reply(&raw[..24]).is_none(), "corta dentro de la tabla");
-    assert!(protocol::parse_reply(&raw[..raw.len() - 2]).is_none(), "sin el NUL final");
-    assert!(protocol::parse_reply(&raw[..raw.len() - 4]).is_none(), "sin el largo de la cadena");
+    assert!(
+        protocol::parse_reply(&raw[..8]).is_none(),
+        "corta antes de la tabla"
+    );
+    assert!(
+        protocol::parse_reply(&raw[..24]).is_none(),
+        "corta dentro de la tabla"
+    );
+    assert!(
+        protocol::parse_reply(&raw[..raw.len() - 2]).is_none(),
+        "sin el NUL final"
+    );
+    assert!(
+        protocol::parse_reply(&raw[..raw.len() - 4]).is_none(),
+        "sin el largo de la cadena"
+    );
     assert!(protocol::parse_reply(&[]).is_none());
 }
 
@@ -163,7 +193,10 @@ fn requests_accept_the_three_shapes_clients_send() {
         sort: sort::NAME_ASC,
         search: "path:\"C:\\Users\\Lucio\" file:".into(),
     };
-    assert_eq!(protocol::parse_request(&protocol::build_request(&r)).unwrap(), r);
+    assert_eq!(
+        protocol::parse_request(&protocol::build_request(&r)).unwrap(),
+        r
+    );
 
     // 2) search_len en 0 (lo que mandan los clientes reales)
     let mut buf = protocol::build_request(&Request {
@@ -171,7 +204,10 @@ fn requests_accept_the_three_shapes_clients_send() {
         ..Default::default()
     });
     buf[8..12].copy_from_slice(&0u32.to_le_bytes());
-    assert_eq!(protocol::parse_request(&buf).unwrap().search, "file: dm:today");
+    assert_eq!(
+        protocol::parse_request(&buf).unwrap().search,
+        "file: dm:today"
+    );
 
     // 3) search_len mentiroso (mas grande que el buffer): gana el terminador
     let mut buf = protocol::build_request(&Request {
@@ -208,7 +244,12 @@ fn limits_do_not_panic() {
     assert_eq!(back.search.len(), 5000);
     assert_eq!(back.max, u32::MAX);
 
-    let raw = protocol::build_reply(u32::MAX, u32::MAX, req::BASIC, &[it("x", "C:", Some(1), false)]);
+    let raw = protocol::build_reply(
+        u32::MAX,
+        u32::MAX,
+        req::BASIC,
+        &[it("x", "C:", Some(1), false)],
+    );
     let reply = protocol::parse_reply(&raw).unwrap();
     assert_eq!(reply.total, u32::MAX);
     assert_eq!(reply.offset, u32::MAX);
@@ -238,7 +279,9 @@ fn full_page_roundtrip() {
 
 #[test]
 fn serialization_is_deterministic() {
-    let items: Vec<ReplyItem> = (0..50).map(|i| it(&format!("n{i}"), "C:\\x", Some(i), false)).collect();
+    let items: Vec<ReplyItem> = (0..50)
+        .map(|i| it(&format!("n{i}"), "C:\\x", Some(i), false))
+        .collect();
     let a = protocol::build_reply(50, 0, req::BASIC, &items);
     let b = protocol::build_reply(50, 0, req::BASIC, &items);
     assert_eq!(a, b);
@@ -282,9 +325,18 @@ fn reply_flags_only_announce_present_fields() {
 #[test]
 fn capabilities_flag_partial_metadata() {
     use census_ipc::protocol::caps;
-    assert!(caps::has(caps::DEFAULT, caps::PARTIAL_METADATA), "Census debe avisar que los metadatos son parciales");
-    assert!(caps::has(caps::DEFAULT, census_ipc::protocol::req::DATE_ACCESSED));
-    assert!(!caps::has(caps::DEFAULT, census_ipc::protocol::req::RUN_COUNT));
+    assert!(
+        caps::has(caps::DEFAULT, caps::PARTIAL_METADATA),
+        "Census debe avisar que los metadatos son parciales"
+    );
+    assert!(caps::has(
+        caps::DEFAULT,
+        census_ipc::protocol::req::DATE_ACCESSED
+    ));
+    assert!(!caps::has(
+        caps::DEFAULT,
+        census_ipc::protocol::req::RUN_COUNT
+    ));
     // Máscara de mensaje estable: WM_USER + 402.
     assert_eq!(census_ipc::protocol::CAPS, 402);
 }

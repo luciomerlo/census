@@ -120,7 +120,10 @@ fn parse_local_stamp(s: &str) -> Option<i64> {
     ];
     for f in DT {
         if let Ok(dt) = NaiveDateTime::parse_from_str(s, f) {
-            return Local.from_local_datetime(&dt).single().map(|d| d.timestamp());
+            return Local
+                .from_local_datetime(&dt)
+                .single()
+                .map(|d| d.timestamp());
         }
     }
     for f in ["%Y-%m-%d", "%Y/%m/%d"] {
@@ -134,9 +137,30 @@ fn parse_local_stamp(s: &str) -> Option<i64> {
 /// Funciones de Everything que dejamos afuera a propósito. Se informan en vez
 /// de convertirse en un término de búsqueda silencioso.
 const UNSUPPORTED: [&str; 24] = [
-    "content", "regex", "case", "wholeword", "wfn", "diacritics", "dc", "da", "dr", "attrib", "dupe", "empty",
-    "parent", "child", "sibling", "ancestor", "len", "depth", "startwith", "endwith", "type", "run",
-    "recentchange", "wildcards",
+    "content",
+    "regex",
+    "case",
+    "wholeword",
+    "wfn",
+    "diacritics",
+    "dc",
+    "da",
+    "dr",
+    "attrib",
+    "dupe",
+    "empty",
+    "parent",
+    "child",
+    "sibling",
+    "ancestor",
+    "len",
+    "depth",
+    "startwith",
+    "endwith",
+    "type",
+    "run",
+    "recentchange",
+    "wildcards",
 ];
 
 fn unknown_function(token_lower: &str) -> Option<&'static str> {
@@ -158,7 +182,9 @@ fn parse_size(s: &str) -> Option<(Cmp, u64)> {
         (Cmp::Eq, s)
     };
     let rest = rest.trim();
-    let digits_end = rest.find(|c: char| !(c.is_ascii_digit() || c == '.')).unwrap_or(rest.len());
+    let digits_end = rest
+        .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+        .unwrap_or(rest.len());
     let number: f64 = rest[..digits_end].parse().ok()?;
     let unit = rest[digits_end..].trim().to_ascii_lowercase();
     let mult: f64 = match unit.as_str() {
@@ -203,7 +229,7 @@ pub fn parse(raw: &str, ix: &Index) -> Query {
                 }
             }
         } else if lower.starts_with("dm:") {
-            let v = lower[3..].to_string();
+            let v = lower.strip_prefix("dm:").unwrap_or("").to_string();
             let now = Local::now().date_naive();
             let bounds = match v.as_str() {
                 "today" => local_date_bounds(now),
@@ -324,7 +350,7 @@ impl Index {
             }
             let Some(dot) = dot else { return false };
             let ext: Vec<u16> = name[dot + 1..].iter().map(|u| fold(*u)).collect();
-            if ext.is_empty() || !q.exts.iter().any(|e| *e == ext) {
+            if ext.is_empty() || !q.exts.contains(&ext) {
                 return false;
             }
         }
@@ -451,10 +477,22 @@ mod tests {
     #[test]
     fn ext_and_size_filters() {
         let ix = ix();
-        assert_eq!(names(&ix, &ix.match_ids(&parse("ext:txt", &ix))), vec!["notas.txt"]);
-        assert_eq!(names(&ix, &ix.match_ids(&parse("ext:.PDF", &ix))), vec!["informe.pdf"]);
-        assert_eq!(names(&ix, &ix.match_ids(&parse("size:>1kb", &ix))), vec!["informe.pdf"]);
-        assert_eq!(names(&ix, &ix.match_ids(&parse("size:<1kb", &ix))), vec!["notas.txt"]);
+        assert_eq!(
+            names(&ix, &ix.match_ids(&parse("ext:txt", &ix))),
+            vec!["notas.txt"]
+        );
+        assert_eq!(
+            names(&ix, &ix.match_ids(&parse("ext:.PDF", &ix))),
+            vec!["informe.pdf"]
+        );
+        assert_eq!(
+            names(&ix, &ix.match_ids(&parse("size:>1kb", &ix))),
+            vec!["informe.pdf"]
+        );
+        assert_eq!(
+            names(&ix, &ix.match_ids(&parse("size:<1kb", &ix))),
+            vec!["notas.txt"]
+        );
     }
 
     #[test]
