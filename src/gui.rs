@@ -651,8 +651,9 @@ impl GuiApp {
                             / (1024.0 * 1024.0);
                         ui.label(
                             RichText::new(format!(
-                                "{} unidades · {nodes} nodos · {ram:.0} MB · Ctrl+C copia la ruta · Enter abre",
-                                self.index.roots.len()
+                                "{} {} · {nodes} nodos · {ram:.0} MB · Ctrl+C copia la ruta · Enter abre",
+                                self.index.roots.len(),
+                                if self.index.roots.len() == 1 { "unidad" } else { "unidades" }
                             ))
                             .size(theme.font_status())
                             .color(theme.muted()),

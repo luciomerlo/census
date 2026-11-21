@@ -26,6 +26,7 @@ public class CensusWin {
     [DllImport("user32.dll")] public static extern int GetWindowThreadProcessId(IntPtr hWnd, out int pid);
     [DllImport("user32.dll")] public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder sb, int max);
     [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb, IntPtr p);
+    [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr hWnd, int x, int y, int w, int h, bool repaint);
     public delegate bool EnumProc(IntPtr hWnd, IntPtr p);
 
     // La ventana del proceso que interesa: la mas grande que no sea la consola.
@@ -59,7 +60,12 @@ try {
     $h = [CensusWin]::FindWindow($p.Id)
     if ($h -eq [IntPtr]::Zero -or $h -eq $null) { throw "la ventana no apareció" }
     [CensusWin]::SetForegroundWindow($h) | Out-Null
-    Start-Sleep -Milliseconds 400
+    # Tamano y posicion fijos: las capturas salen siempre iguales.
+    $wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+    $ww = [Math]::Min($wa.Width - 20, 1180)
+    $wh = [Math]::Min($wa.Height - 20, 660)
+    [CensusWin]::MoveWindow($h, 10, 10, $ww, $wh, $true) | Out-Null
+    Start-Sleep -Milliseconds 700
 
     $r = New-Object CensusWin+RECT
     [CensusWin]::GetWindowRect($h, [ref]$r) | Out-Null
