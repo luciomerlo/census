@@ -50,6 +50,13 @@ pub struct Index {
     /// Copia de `names` en minúsculas y sin acentos: buscar no vuelve a plegar
     /// carácter por carácter en cada consulta.
     pub folded: Vec<u16>,
+    /// Hijos por carpeta en formato CSR: los hijos de `id` son
+    /// `hijos[hijos_inicio[id]..hijos_inicio[id+1]]`.
+    pub hijos_inicio: Vec<u32>,
+    pub hijos: Vec<u32>,
+    /// Ids ordenados por nombre plegado, y la posición de cada id en ese orden.
+    pub por_nombre: Vec<u32>,
+    pub rango: Vec<u32>,
 }
 
 pub struct Builder {
@@ -162,9 +169,14 @@ impl Builder {
             dir_bytes: Vec::new(),
             vol_serials: Vec::new(),
             folded: Vec::new(),
+            hijos_inicio: Vec::new(),
+            hijos: Vec::new(),
+            por_nombre: Vec::new(),
+            rango: Vec::new(),
         };
         ix.compute_dir_bytes();
         ix.compute_folded();
+        ix.rebuild_indexes();
         ix
     }
 }
@@ -350,9 +362,14 @@ impl Index {
             dir_bytes: Vec::new(),
             vol_serials: Vec::new(),
             folded: Vec::new(),
+            hijos_inicio: Vec::new(),
+            hijos: Vec::new(),
+            por_nombre: Vec::new(),
+            rango: Vec::new(),
         };
         ix.compute_dir_bytes();
         ix.compute_folded();
+        ix.rebuild_indexes();
         ix
     }
 

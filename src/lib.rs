@@ -5,6 +5,7 @@ mod dirsize;
 #[cfg(feature = "gui")]
 pub mod gui;
 pub mod index;
+mod indexes;
 pub mod mcp;
 pub mod query;
 pub mod service;

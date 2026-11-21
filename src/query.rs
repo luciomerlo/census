@@ -570,6 +570,14 @@ impl Index {
             }
         };
         match sort {
+            // Con los rangos precalculados, ordenar por nombre es comparar dos
+            // enteros: no se toca la arena.
+            Sort::NameAsc if !self.rango.is_empty() => {
+                ids.sort_unstable_by_key(|&id| self.rank_of(id))
+            }
+            Sort::NameDesc if !self.rango.is_empty() => {
+                ids.sort_unstable_by_key(|&id| std::cmp::Reverse(self.rank_of(id)))
+            }
             Sort::NameAsc => ids.sort_unstable_by(|&a, &b| self.cmp_name(a, b)),
             Sort::NameDesc => ids.sort_unstable_by(|&a, &b| self.cmp_name(b, a)),
             Sort::PathAsc => ids.sort_unstable_by(|&a, &b| {

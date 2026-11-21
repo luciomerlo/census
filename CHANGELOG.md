@@ -44,19 +44,21 @@ Ronda de revisión de bugs y dependencias. Sin cambios de formato ni de protocol
 
 ### Agregado
 
-- **Identidad NTFS por IPC** (`IDENTITY = 0x0001_0000`): 16 bytes por fila con
-  `vol_serial` y `frn` (u64 little-endian), sólo si el cliente la pide y el volumen
-  tiene número de serie. `frn = 0` significa "sin identidad" y el cliente cae a
-  `path + size + mtime`. El `flags` de la respuesta lo anuncia con precisión.
-- `census probe` muestra el bit de identidad y la de la primera fila.
-- `pause.json` pasa al JSON acordado con Wiz y Sort
-  (`paused`, `resume_at` en ms, `reason`, `updated`), escrito con `tmp` + `rename`.
-  Se sigue leyendo el formato viejo `clave=valor`.
+- **Índices auxiliares**: CSR de hijos por carpeta (`children_of`) y orden
+  alfabético precalculado (`por_nombre` + `rango`). Ordenar por nombre pasa a
+  comparar dos `u32` en vez de cadenas, y listar una carpeta ya no recorre el
+  índice entero.
+- **Búsqueda por fragmentos con prioridad de nombre**, arena plegada sin
+  `fold()` en consulta, dos fases y escaneo en paralelo.
+- `census bench --root <dir>` para medir sin elevación.
+- `census elevate always|never|ask`: la app pide permisos una sola vez y lo
+  recuerda; con snapshot fresco no vuelve a preguntar.
+- Nube fuera de `index_all`: sólo metadata y sólo con `--include-cloud`.
 
 ### Corregido
 
-- El parser del protocolo no avanzaba el cursor al leer `run_count`, lo que habría
-  desalineado cualquier campo posterior (como la identidad).
+- `parse_reply` no avanzaba al leer `run_count`.
+- Sin pausa: se sacaron `pause.json`, los comandos `pause`/`resume` y el botón.
 
 ## [0.1.0] — 2026-11-21
 
