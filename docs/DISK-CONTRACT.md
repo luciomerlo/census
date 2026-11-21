@@ -71,8 +71,12 @@ perfil portable). Census no lee ni escribe ese archivo nunca.
   cerrar la app no borra la pausa.
 - La pausa frena **trabajo de fondo**, nunca las consultas del usuario. Libera el lock del
   disco; al reanudar se vuelve a pedir, y si no se consigue la tarea espera.
-- `activity.json` en `%LOCALAPPDATA%\WizeShared\` avisa qué está corriendo:
-  `{pid, app, task, resources, roots, state, forced, heartbeat}`.
+- Actividad: **un archivo por app** en `%LOCALAPPDATA%\WizeShared\`
+  (`activity-Census.json`, `activity-Wiz.json`, `activity-Sort.json`). Cada proceso escribe
+  sólo el suyo, con `tmp` + `rename`, y lee los otros dos sin modificarlos. Contenido:
+  `{pid, app, task, resources, roots, state, forced, heartbeat}`; un `heartbeat` de más de
+  120 s no bloquea. Si el disco no se puede identificar (`disk:?`) o es nube, no se inventa
+  lock: se avisa por raíces solapadas.
 - La unidad de exclusión es el **disco físico** (`disk:<DeviceNumber>`, vía
   `IOCTL_STORAGE_GET_DEVICE_NUMBER`), no la letra. Dos particiones del mismo disco no
   corren tareas pesadas a la vez. Para nube y red: `cloud:<provider>`.

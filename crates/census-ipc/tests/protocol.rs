@@ -25,6 +25,7 @@ fn it(name: &str, path: &str, size: Option<u64>, dir: bool) -> ReplyItem {
         run_count: 3,
         is_dir: dir,
         is_drive: false,
+        identity: None,
     }
 }
 
@@ -351,4 +352,36 @@ fn messages_a_medium_client_needs_are_filtered() {
     assert!(allowed.contains(&census_ipc::protocol::WM_COPYDATA));
     assert!(allowed.contains(&(0x0400 + IS_DB_LOADED)));
     assert!(allowed.contains(&(0x0400 + CAPS)));
+}
+
+#[test]
+fn identity_travels_only_when_requested_and_adds_16_bytes_per_row() {
+    let mut fila = it("a.txt", r"C:\x", Some(10), false);
+    fila.identity = Some((0x1234_5678_9abc_def0, 0x0000_0042_0000_0001));
+    let items = vec![fila];
+
+    // Sin pedirla: la fila no la lleva y el parser devuelve None.
+    let sin = protocol::build_reply(1, 0, req::BASIC, &items);
+    let leido = protocol::parse_reply(&sin).expect("respuesta valida");
+    assert_eq!(leido.items[0].identity, None);
+
+    // Pidiendola: 16 bytes mas por fila, y el resto se sigue leyendo bien.
+    let con = protocol::build_reply(1, 0, req::BASIC | req::IDENTITY, &items);
+    assert_eq!(con.len(), sin.len() + 16);
+    let leido = protocol::parse_reply(&con).expect("respuesta valida");
+    assert_eq!(
+        leido.items[0].identity,
+        Some((0x1234_5678_9abc_def0, 0x0000_0042_0000_0001))
+    );
+    assert_eq!(leido.items[0].name, "a.txt");
+    assert_eq!(leido.items[0].size, Some(10));
+}
+
+#[test]
+fn identity_zero_means_unknown() {
+    let mut fila = it("b.txt", r"C:\x", None, false);
+    fila.identity = None;
+    let raw = protocol::build_reply(1, 0, req::BASIC | req::IDENTITY, &[fila]);
+    let leido = protocol::parse_reply(&raw).expect("respuesta valida");
+    assert_eq!(leido.items[0].identity, None);
 }

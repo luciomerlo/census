@@ -72,6 +72,7 @@ fn truncated_reply_with_valid_header_does_not_panic() {
             run_count: 0,
             is_dir: false,
             is_drive: false,
+            identity: None,
         },
         ReplyItem {
             name: "dos".into(),
@@ -83,6 +84,7 @@ fn truncated_reply_with_valid_header_does_not_panic() {
             run_count: 0,
             is_dir: true,
             is_drive: false,
+            identity: None,
         },
     ];
     let full = build_reply(2, 0, protocol::req::BASIC, &items);

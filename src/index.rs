@@ -45,6 +45,8 @@ pub struct Index {
     pub built_at: i64,
     /// Tamaño recursivo por nodo (archivos: su tamaño; carpetas: la suma).
     pub dir_bytes: Vec<u64>,
+    /// Número de serie del volumen de cada raíz (paralelo a `roots`).
+    pub vol_serials: Vec<u64>,
 }
 
 pub struct Builder {
@@ -155,6 +157,7 @@ impl Builder {
             stats,
             built_at: 0,
             dir_bytes: Vec::new(),
+            vol_serials: Vec::new(),
         };
         ix.compute_dir_bytes();
         ix
@@ -325,6 +328,7 @@ impl Index {
             stats,
             built_at,
             dir_bytes: Vec::new(),
+            vol_serials: Vec::new(),
         };
         ix.compute_dir_bytes();
         ix

@@ -414,7 +414,13 @@ fn cmd_probe() -> Result<(), String> {
         bit(caps, census_ipc::protocol::req::RUN_COUNT),
         bit(caps, census_ipc::protocol::caps::PARTIAL_METADATA),
     );
-    let asked = census_ipc::protocol::req::BASIC | census_ipc::protocol::req::RUN_COUNT;
+    println!(
+        "  identity={}",
+        bit(caps, census_ipc::protocol::req::IDENTITY),
+    );
+    let asked = census_ipc::protocol::req::BASIC
+        | census_ipc::protocol::req::RUN_COUNT
+        | census_ipc::protocol::req::IDENTITY;
     match client.query_raw("", 1, 0, 1, asked) {
         Some(raw) => {
             let reply = census_ipc::protocol::parse_reply(&raw).ok_or("respuesta ilegible")?;
@@ -424,6 +430,15 @@ fn cmd_probe() -> Result<(), String> {
                 bit(reply.flags, census_ipc::protocol::req::RUN_COUNT)
             );
             println!("total: {}", reply.total);
+            if let Some(fila) = reply.items.first() {
+                match fila.identity {
+                    Some((serial, frn)) => println!(
+                        "identidad: vol_serial={serial:016x} frn={frn:016x} ({})",
+                        fila.name
+                    ),
+                    None => println!("identidad: no disponible en la primera fila"),
+                }
+            }
         }
         None => println!("query: sin respuesta"),
     }

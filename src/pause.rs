@@ -29,32 +29,58 @@ fn path() -> PathBuf {
 
 impl Pause {
     /// Lee el estado del disco. Un archivo roto equivale a "sin pausa".
+    ///
+    /// Acepta el JSON acordado con Wiz y Sort y, por compatibilidad, el formato
+    /// `clave=valor` que escribían las versiones anteriores de Census.
     pub fn load() -> Self {
         let Ok(texto) = std::fs::read_to_string(path()) else {
             return Self::default();
         };
         let mut p = Self::default();
+        if texto.trim_start().starts_with('{') {
+            for (clave, valor) in pares_json(&texto) {
+                match clave.as_str() {
+                    "paused" => p.paused = valor == "true",
+                    "resume_at" => {
+                        p.resume_at = valor.parse::<i64>().ok().filter(|v| *v > 0);
+                    }
+                    _ => {}
+                }
+            }
+            return p;
+        }
         for linea in texto.lines() {
             let Some((clave, valor)) = linea.split_once('=') else {
                 continue;
             };
             match clave.trim() {
                 "paused" => p.paused = valor.trim() == "1" || valor.trim() == "true",
-                "resume_at" => p.resume_at = valor.trim().parse::<i64>().ok(),
+                "resume_at" => {
+                    p.resume_at = valor.trim().parse::<i64>().ok().filter(|v| *v > 0);
+                }
                 _ => {}
             }
         }
         p
     }
 
+    /// Escribe el JSON compartido: `{"paused","resume_at","reason","updated"}`.
     pub fn save(&self) -> std::io::Result<()> {
         std::fs::create_dir_all(dir())?;
+        let resume = match self.resume_at {
+            Some(v) => v.to_string(),
+            None => String::from("null"),
+        };
         let texto = format!(
-            "paused={}\nresume_at={}\n",
-            if self.paused { 1 } else { 0 },
-            self.resume_at.unwrap_or(0)
+            "{{\"paused\":{},\"resume_at\":{},\"reason\":\"{}\",\"updated\":{}}}\n",
+            self.paused,
+            resume,
+            if self.paused { "manual" } else { "resume" },
+            crate::time::now() * 1000
         );
-        std::fs::write(path(), texto)
+        let tmp = dir().join(format!("pause.json.tmp.{}", std::process::id()));
+        std::fs::write(&tmp, texto)?;
+        std::fs::rename(&tmp, path())
     }
 
     /// ¿Hay que frenar el trabajo de fondo ahora?
@@ -78,6 +104,52 @@ impl Pause {
             None => String::from("Reanudar"),
         }
     }
+}
+
+/// Pares `"clave":valor` de un JSON plano, suficientes para este archivo.
+fn pares_json(texto: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let bytes: Vec<char> = texto.chars().collect();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        // Buscar el inicio de una clave.
+        if bytes[i] != '"' {
+            i += 1;
+            continue;
+        }
+        i += 1;
+        let mut clave = String::new();
+        while i < bytes.len() && bytes[i] != '"' {
+            clave.push(bytes[i]);
+            i += 1;
+        }
+        i += 1;
+        while i < bytes.len() && bytes[i] != ':' {
+            i += 1;
+        }
+        i += 1;
+        while i < bytes.len() && bytes[i].is_whitespace() {
+            i += 1;
+        }
+        let mut valor = String::new();
+        if i < bytes.len() && bytes[i] == '"' {
+            i += 1;
+            while i < bytes.len() && bytes[i] != '"' {
+                valor.push(bytes[i]);
+                i += 1;
+            }
+            i += 1;
+        } else {
+            while i < bytes.len() && !matches!(bytes[i], ',' | '}') {
+                if !bytes[i].is_whitespace() {
+                    valor.push(bytes[i]);
+                }
+                i += 1;
+            }
+        }
+        out.push((clave, valor));
+    }
+    out
 }
 
 /// Estado vigente, ya normalizado (levanta la pausa vencida y persiste).
@@ -177,5 +249,49 @@ mod tests {
         assert!(until_local(22, 60).is_none());
         let t = until_local(22, 0).expect("hora válida");
         assert!(t > crate::time::now() * 1000);
+    }
+}
+
+#[cfg(test)]
+mod formato_tests {
+    use super::*;
+
+    #[test]
+    fn json_round_trip() {
+        let p = Pause {
+            paused: true,
+            resume_at: Some(1_795_314_600_000),
+        };
+        let texto = format!(
+            "{{\"paused\":{},\"resume_at\":{},\"reason\":\"manual\",\"updated\":1}}",
+            p.paused,
+            p.resume_at.unwrap()
+        );
+        let pares = pares_json(&texto);
+        assert_eq!(pares.iter().find(|(k, _)| k == "paused").unwrap().1, "true");
+        assert_eq!(
+            pares.iter().find(|(k, _)| k == "resume_at").unwrap().1,
+            "1795314600000"
+        );
+        assert_eq!(
+            pares.iter().find(|(k, _)| k == "reason").unwrap().1,
+            "manual"
+        );
+    }
+
+    #[test]
+    fn null_resume_at_means_manual() {
+        let pares = pares_json("{\"paused\":false,\"resume_at\":null}");
+        assert_eq!(
+            pares.iter().find(|(k, _)| k == "resume_at").unwrap().1,
+            "null"
+        );
+        assert!(pares
+            .iter()
+            .find(|(k, _)| k == "resume_at")
+            .unwrap()
+            .1
+            .parse::<i64>()
+            .is_err());
     }
 }

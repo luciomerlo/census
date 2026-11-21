@@ -6,7 +6,7 @@
 //! Se calcula una vez, en una pasada sobre los nodos ya ordenados por
 //! profundidad.
 
-use super::index::{Index, F_DIR};
+use super::index::{Index, F_DIR, F_ROOT};
 
 impl Index {
     /// Rellena `dir_bytes` (tamaño recursivo de cada carpeta).
@@ -93,6 +93,64 @@ impl Index {
         }
     }
 }
+
+/// Identidad NTFS de cada nodo: número de serie del volumen + FRN.
+impl Index {
+    /// Completa `vol_serials` pidiendo el número de serie de cada unidad.
+    /// No toca la MFT ni necesita elevación (es `GetVolumeInformationW`).
+    #[cfg(windows)]
+    pub fn fill_serials(&mut self) {
+        self.vol_serials = self
+            .roots
+            .iter()
+            .map(|&r| crate::volumes::volume_serial(self.letter_of(r)).unwrap_or(0))
+            .collect();
+    }
+
+    /// Sin Win32 (tests sin unidad real) no hay número de serie.
+    #[cfg(not(windows))]
+    pub fn fill_serials(&mut self) {
+        self.vol_serials = vec![0; self.roots.len()];
+    }
+
+    /// Raíz de la que cuelga un nodo.
+    pub fn root_of(&self, id: u32) -> u32 {
+        let mut cur = id;
+        for _ in 0..=MAX_PARENT_HOPS {
+            let Some(n) = self.nodes.get(cur as usize) else {
+                return cur;
+            };
+            if n.flags & F_ROOT != 0 || n.parent == cur {
+                return cur;
+            }
+            cur = n.parent;
+        }
+        cur
+    }
+
+    /// `(vol_serial, frn)` del nodo, o `None` si el volumen no tiene serie.
+    pub fn identity_of(&self, id: u32) -> Option<(u64, u64)> {
+        let frn = self.nodes.get(id as usize)?.frn;
+        if frn == 0 {
+            return None;
+        }
+        let root = self.root_of(id);
+        let pos = self.roots.iter().position(|&r| r == root)?;
+        let serial = *self.vol_serials.get(pos)?;
+        if serial == 0 {
+            return None;
+        }
+        Some((serial, frn))
+    }
+
+    /// ¿Hay identidad disponible para anunciarla por IPC?
+    pub fn has_identity(&self) -> bool {
+        self.vol_serials.iter().any(|&s| s != 0)
+    }
+}
+
+/// Tope de saltos al subir por los padres (una ruta real no llega ni cerca).
+const MAX_PARENT_HOPS: u32 = 256;
 
 #[cfg(test)]
 mod tests {

@@ -30,6 +30,9 @@ pub mod req {
     pub const DATE_ACCESSED: u32 = 0x0000_0080;
     pub const ATTRIBUTES: u32 = 0x0000_0100;
     pub const RUN_COUNT: u32 = 0x0000_0400;
+    /// Identidad NTFS: 16 bytes por fila (`vol_serial` y `frn`, u64 LE).
+    /// Sólo viaja si el cliente la pide y el motor la tiene.
+    pub const IDENTITY: u32 = 0x0001_0000;
     /// Lo que piden las apps: nombre, carpeta, tamaño y fecha de modificación.
     pub const BASIC: u32 = NAME | PATH | SIZE | DATE_MODIFIED;
 }
@@ -113,6 +116,9 @@ pub struct ReplyItem {
     pub run_count: u32,
     pub is_dir: bool,
     pub is_drive: bool,
+    /// `(vol_serial, frn)` de NTFS. `None` = sin identidad (volumen sin
+    /// número de serie o nodo sin FRN): se envía `(0, 0)`.
+    pub identity: Option<(u64, u64)>,
 }
 
 impl ReplyItem {
@@ -252,6 +258,11 @@ pub fn build_reply(total: u32, offset: u32, flags: u32, items: &[ReplyItem]) -> 
         if flags & req::RUN_COUNT != 0 {
             data.extend_from_slice(&it.run_count.to_le_bytes());
         }
+        if flags & req::IDENTITY != 0 {
+            let (serial, frn) = it.identity.unwrap_or((0, 0));
+            data.extend_from_slice(&serial.to_le_bytes());
+            data.extend_from_slice(&frn.to_le_bytes());
+        }
     }
     buf.extend_from_slice(&data);
     buf
@@ -335,9 +346,22 @@ pub fn parse_reply(buf: &[u8]) -> Option<Reply> {
             0
         };
         let run_count = if flags & req::RUN_COUNT != 0 {
-            u32_at(buf, p)?
+            let v = u32_at(buf, p)?;
+            p += 4;
+            v
         } else {
             0
+        };
+        let identity = if flags & req::IDENTITY != 0 {
+            let serial = take8(&mut p)?;
+            let frn = take8(&mut p)?;
+            if frn == 0 {
+                None
+            } else {
+                Some((serial, frn))
+            }
+        } else {
+            None
         };
         items.push(ReplyItem {
             name,
@@ -347,6 +371,7 @@ pub fn parse_reply(buf: &[u8]) -> Option<Reply> {
             accessed_ft,
             attributes,
             run_count,
+            identity,
             is_dir: f & item::IS_DIR != 0,
             is_drive: f & item::DRIVE != 0,
         });

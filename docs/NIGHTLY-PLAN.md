@@ -28,6 +28,12 @@ Antes de empezar y durante la tarea se consulta
  "state": "running|paused", "forced": true, "heartbeat": 1760000000000}
 ```
 
+`heartbeat` con más de 120 s de antigüedad no bloquea. Si no se puede identificar el
+disco (`disk:?`) o es nube, no se inventa lock: se avisa por raíces solapadas.
+
+Recursos que anuncia cada app: Census `disk:<n>`, `usn`, `wcat`; Wiz `disk:<n>`,
+`cloud:<provider>`, `sqlite`; Sort `disk:<n>`, `cloud:<provider>`.
+
 Si hay conflicto: aviso en la app, notificación de Windows si está minimizada, y opciones
 **Cancelar / Esperar / Forzar** (forzar pide confirmación y queda en el log). Si el usuario
 fuerza Wiz y Census a la vez, **Wiz gana**: Census pausa en el próximo punto seguro y avisa
@@ -51,7 +57,7 @@ fuerza Wiz y Census a la vez, **Wiz gana**: Census pausa en el próximo punto se
 | 5 | 1 | Census | **C4** documentación del contrato + `census probe` extendido | `cpu` | — | 1,5 h | sí | sí |
 | 5 | 2 | Sort | **S-3b** OCR: idiomas ausentes, caché y pruebas con escaneo real | `gpu:0`, `cpu` | — | 3,5 h | sí | sí |
 | 6 | 1 | Census | **C5** nube explícita: fuera de `index_all`, `--include-cloud` metadata-only | `cloud:google` | `G:\`, `H:\` | 2 h | sí | sí |
-| 6 | 1 | Census | **C6** `activity.json` + locks `disk:<n>` y `cloud:<p>`, aviso de conflicto | `cpu` | — | 2,5 h | sí | sí |
+| 6 | 1 | Census | **C6** `activity-Census.json` (per-app, una entrada) + locks `disk:<n>`/`cloud:<p>`, aviso de conflicto y `must_yield` ante Wiz | `cpu`, `wcat`, `usn` | — | 2,5 h | sí | sí |
 | 7 | buffer | cualquiera | regresión cruzada: migración real, `.ecat`/WOF, integración | `disk:0` | — | 4 h | sí | sí |
 
 El shim `Everything64.dll` **sale del calendario**: Sort confirmó que no lo usa (va por

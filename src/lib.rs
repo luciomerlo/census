@@ -88,6 +88,7 @@ fn build_volume(letter: char) -> Result<(Index, source::ScanStats), String> {
     ix.stats.skipped = stats.skipped;
     ix.stats.build_ms = t0.elapsed().as_millis();
     ix.built_at = crate::time::now();
+    ix.fill_serials();
     Ok((ix, stats))
 }
 

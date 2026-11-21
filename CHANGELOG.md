@@ -42,10 +42,21 @@ Ronda de revisión de bugs y dependencias. Sin cambios de formato ni de protocol
 
 ## [Unreleased]
 
-### Por hacer
-- Delta por USN Journal: hoy el snapshot se reusa con una ventana de 30 s (`--max-age`).
-- Shim `Everything64.dll` para SortEverything (el crate existe, los exports no).
-- Ordenar por tamaño, fecha y ruta además de por nombre.
+### Agregado
+
+- **Identidad NTFS por IPC** (`IDENTITY = 0x0001_0000`): 16 bytes por fila con
+  `vol_serial` y `frn` (u64 little-endian), sólo si el cliente la pide y el volumen
+  tiene número de serie. `frn = 0` significa "sin identidad" y el cliente cae a
+  `path + size + mtime`. El `flags` de la respuesta lo anuncia con precisión.
+- `census probe` muestra el bit de identidad y la de la primera fila.
+- `pause.json` pasa al JSON acordado con Wiz y Sort
+  (`paused`, `resume_at` en ms, `reason`, `updated`), escrito con `tmp` + `rename`.
+  Se sigue leyendo el formato viejo `clave=valor`.
+
+### Corregido
+
+- El parser del protocolo no avanzaba el cursor al leer `run_count`, lo que habría
+  desalineado cualquier campo posterior (como la identidad).
 
 ## [0.1.0] — 2026-11-21
 

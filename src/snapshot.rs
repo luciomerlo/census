@@ -508,6 +508,7 @@ pub fn load(path: &Path) -> Result<Index, LoadError> {
         stats,
         built_at,
         dir_bytes: Vec::new(),
+        vol_serials: Vec::new(),
     };
     ix.compute_dir_bytes();
     Ok(ix)

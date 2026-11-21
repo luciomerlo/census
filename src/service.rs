@@ -72,6 +72,15 @@ impl Service {
 }
 
 impl Searcher for Service {
+    /// Además de lo básico, Census puede entregar la identidad NTFS.
+    fn caps(&self) -> u32 {
+        if self.index.has_identity() {
+            census_ipc::protocol::caps::DEFAULT | census_ipc::protocol::req::IDENTITY
+        } else {
+            census_ipc::protocol::caps::DEFAULT
+        }
+    }
+
     fn is_ready(&self) -> bool {
         !self.index.is_empty()
     }
@@ -104,6 +113,7 @@ impl Searcher for Service {
                     run_count: 0,
                     is_dir: n.flags & F_DIR != 0,
                     is_drive: n.flags & F_ROOT != 0,
+                    identity: self.index.identity_of(id),
                 }
             })
             .collect();

@@ -172,6 +172,29 @@ mod imp {
         s.encode_utf16().chain(std::iter::once(0)).collect()
     }
 
+    /// Número de serie del volumen (`GetVolumeInformationW`). No pide elevación.
+    pub fn volume_serial(letter: char) -> Option<u64> {
+        let root = format!("{}:\\", letter.to_ascii_uppercase());
+        let wide: Vec<u16> = root.encode_utf16().chain(std::iter::once(0)).collect();
+        let mut serial: u32 = 0;
+        let ok = unsafe {
+            GetVolumeInformationW(
+                wide.as_ptr(),
+                std::ptr::null_mut(),
+                0,
+                &mut serial,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        if ok == 0 {
+            return None;
+        }
+        Some(serial as u64)
+    }
+
     pub fn enumerate() -> Vec<Drive> {
         let mask = unsafe { GetLogicalDrives() };
         let mut out = Vec::new();
@@ -237,6 +260,10 @@ mod imp {
 #[cfg(not(windows))]
 mod imp {
     use super::*;
+    pub fn volume_serial(_letter: char) -> Option<u64> {
+        None
+    }
+
     pub fn enumerate() -> Vec<Drive> {
         vec![Drive {
             name: "C:".into(),
@@ -250,6 +277,7 @@ mod imp {
 }
 
 pub use imp::enumerate;
+pub use imp::volume_serial;
 
 /// Unidades que Census indexa: **todas las disponibles** (locales, de red y de
 /// nube), salvo las que el usuario haya excluido en la configuración de Census.
