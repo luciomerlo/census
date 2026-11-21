@@ -1,0 +1,6 @@
+/target
+**/*.rs.bk
+*.tmp
+*.wcat
+bench.txt
+index.txt

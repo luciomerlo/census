@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Census: lupa sobre el censo de archivos de un volumen">
+  <title>Census</title>
+  <desc>Lupa de lente ambar, guino a la de Everything (voidtools), con un indice de filas dentro: no es su icono.</desc>
+  <defs>
+    <radialGradient id="lens" cx="0.38" cy="0.32" r="0.75">
+      <stop offset="0" stop-color="#FFD07A" stop-opacity="0.95"/>
+      <stop offset="0.55" stop-color="#F59A1E" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#C85A08" stop-opacity="0.9"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFC24A"/>
+      <stop offset="0.5" stop-color="#F0820F"/>
+      <stop offset="1" stop-color="#B34A05"/>
+    </linearGradient>
+    <linearGradient id="steel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#404A5A"/>
+      <stop offset="1" stop-color="#1A1F27"/>
+    </linearGradient>
+    <filter id="soft" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#soft)">
+    <path d="M152 152 L197 197" stroke="url(#steel)" stroke-width="24" stroke-linecap="round"/>
+    <circle cx="104" cy="104" r="62" fill="url(#lens)" stroke="url(#ring)" stroke-width="18"/>
+  </g>
+
+  <!-- el censo: filas de archivos, una encontrada -->
+  <g fill="#FFF3DC">
+    <rect x="72" y="80" width="64" height="11" rx="5.5" opacity="0.55"/>
+    <rect x="72" y="118" width="64" height="11" rx="5.5" opacity="0.55"/>
+  </g>
+  <rect x="72" y="99" width="72" height="11" rx="5.5" fill="#FFFFFF"/>
+
+  <!-- brillo del cristal -->
+  <path d="M64 76 A58 58 0 0 1 94 50" stroke="#FFFFFF" stroke-opacity="0.45" stroke-width="7" stroke-linecap="round" fill="none"/>
+</svg>
