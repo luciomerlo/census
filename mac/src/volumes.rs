@@ -299,6 +299,52 @@ pub fn federation_ok(v: &Volume) -> bool {
     }
 }
 
+/// Mini-parser de `plist` XML: `key` seguido inmediatamente por
+/// string/integer/true/false. No se usa un crate de plist para no sumar
+/// dependencias a un comando que sólo corre en macOS.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn plist_values(xml: &str) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    let mut pos = 0usize;
+    while let Some(i) = xml[pos..].find("<key>") {
+        let start = pos + i + 5;
+        let Some(j) = xml[start..].find("</key>") else {
+            break;
+        };
+        let key = xml[start..start + j].trim().to_string();
+        let rest = start + j + 6;
+        let after = &xml[rest..];
+        let ws = after.len() - after.trim_start().len();
+        let base = rest + ws;
+        let tail = &xml[base..];
+        let value = if let Some(t) = tail.strip_prefix("<string>") {
+            t.find("</string>").map(|e| unescape(&t[..e]))
+        } else if let Some(t) = tail.strip_prefix("<integer>") {
+            t.find("</integer>").map(|e| t[..e].trim().to_string())
+        } else if tail.starts_with("<true/>") {
+            Some("true".into())
+        } else if tail.starts_with("<false/>") {
+            Some("false".into())
+        } else {
+            None
+        };
+        if let Some(v) = value {
+            out.insert(key, v);
+        }
+        pos = rest;
+    }
+    out
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn unescape(s: &str) -> String {
+    s.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+}
+
 #[cfg(target_os = "macos")]
 mod backend {
     use super::*;
@@ -690,49 +736,6 @@ mod backend {
         }
     }
 
-    /// Mini-parser de `plist` XML: `key` seguido de string/integer/true.
-    fn plist_values(xml: &str) -> HashMap<String, String> {
-        let mut out = HashMap::new();
-        let mut pos = 0usize;
-        while let Some(i) = xml[pos..].find("<key>") {
-            let start = pos + i + 5;
-            let Some(j) = xml[start..].find("</key>") else {
-                break;
-            };
-            let key = xml[start..start + j].trim().to_string();
-            let rest = start + j + 6;
-            let after = &xml[rest..];
-            let value = if let Some(i) = after.find("<string>") {
-                let s = rest + i + 8;
-                xml[s..].find("</string>").map(|e| unescape(&xml[s..s + e]))
-            } else if let Some(i) = after.find("<integer>") {
-                let s = rest + i + 9;
-                xml[s..]
-                    .find("</integer>")
-                    .map(|e| xml[s..s + e].trim().to_string())
-            } else if after.trim_start().starts_with("<true/>") {
-                Some("true".into())
-            } else if after.trim_start().starts_with("<false/>") {
-                Some("false".into())
-            } else {
-                None
-            };
-            if let Some(v) = value {
-                out.insert(key, v);
-            }
-            pos = rest;
-        }
-        out
-    }
-
-    fn unescape(s: &str) -> String {
-        s.replace("&amp;", "&")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
-            .replace("&quot;", "\"")
-            .replace("&apos;", "'")
-    }
-
     /// Test hook: mismos vectores que Linux.
     #[allow(dead_code)]
     pub(crate) fn _disk_info_for_tests(xml: &str) -> DiskInfo {
@@ -879,6 +882,28 @@ mod tests {
             ..Default::default()
         };
         assert!(!federation_ok(&v));
+    }
+
+    #[test]
+    fn parses_plist_immediate_values() {
+        let xml = r#"<plist><dict>
+            <key>DeviceIdentifier</key><string>disk4s1</string>
+            <key>TotalSize</key><integer>4000787030016</integer>
+            <key>MountPoint</key><string>/Volumes/Backup</string>
+        </dict></plist>"#;
+        let p = plist_values(xml);
+        assert_eq!(
+            p.get("DeviceIdentifier").map(String::as_str),
+            Some("disk4s1")
+        );
+        assert_eq!(
+            p.get("TotalSize").map(String::as_str),
+            Some("4000787030016")
+        );
+        assert_eq!(
+            p.get("MountPoint").map(String::as_str),
+            Some("/Volumes/Backup")
+        );
     }
 
     #[cfg(target_os = "macos")]
