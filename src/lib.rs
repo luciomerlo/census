@@ -13,6 +13,7 @@ pub mod snapshot;
 #[cfg(feature = "gui")]
 pub mod theme;
 pub mod time;
+pub mod usn;
 pub mod volumes;
 
 #[cfg(windows)]
