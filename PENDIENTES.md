@@ -14,6 +14,20 @@
   endpoints HTTP, aceptado por los tres chats.
 - 154 tests verdes, clippy `-D warnings` en 0.
 
+## UI: emular WizEverything (pedido del usuario, en este orden)
+
+1. **Sin botones de orden.** El orden se cambia clickeando el encabezado de la
+   columna (Nombre / Carpeta / Tamaño / Fecha), con flecha ↑↓ en la activa.
+   Borrar el botón `self.sort.label()` de la barra.
+2. **Unidades a la izquierda, clickeables.** Panel lateral (no ventana modal) con
+   la lista de unidades; click selecciona esa unidad y filtra los resultados
+   (incluye "Todas"). Las nube se tildan desde ahí y **deben indexarse al
+   tildarlas**, sin reiniciar (hoy `roster()` nunca las prende porque
+   `is_indexable()` excluye nube: bug confirmado, arreglar con `included_drives`).
+3. **Icono de lupa inclinado a la derecha** (hoy el asa apunta a la izquierda).
+4. Layout de referencia: Wiz `src/app.rs` (panel de árbol + tabla + detalle),
+   misma disposición, no el mismo código.
+
 ## Pendiente inmediato
 - **`volumes --json` y `census atlas ...`**: el subagente había reescrito
   `main.rs` y la CLI quedaba colgada; se volvió a HEAD. Hay que re-agregar sólo
