@@ -74,7 +74,7 @@ use crate::index::{Index, Node, Stats};
 const MAGIC: [u8; 10] = *b"CENSUSWCAT";
 
 /// Versión del formato que escribimos y leemos.
-const VERSION: u16 = 2;
+const VERSION: u16 = 3;
 
 /// Bit 0 de `flags`: campos en little-endian.
 const FLAG_LE: u16 = 0x1;
@@ -98,6 +98,85 @@ const NODE_CHUNK: usize = 8192;
 /// usan los tests para corruptar ese campo a propósito.
 #[cfg(test)]
 const NODE_PARENT_OFF: usize = 8;
+
+/// Cantidad de hilos para conversiones y verificaciones al cargar.
+fn hilos_carga() -> usize {
+    std::thread::available_parallelism()
+        .map(|v| v.get())
+        .unwrap_or(4)
+        .clamp(1, 16)
+}
+
+/// Convierte bytes little-endian a `u16` en paralelo.
+///
+/// La conversión elemento por elemento era la mitad del tiempo de carga (39 M
+/// de valores para la arena). Cada hilo escribe su trozo de la salida ya
+/// reservada: no hay `unsafe` ni copias intermedias.
+fn bytes_a_u16(bytes: &[u8]) -> Vec<u16> {
+    let n = bytes.len() / 2;
+    let mut out = vec![0u16; n];
+    if n == 0 {
+        return out;
+    }
+    let hilos = hilos_carga();
+    let bloque = n.div_ceil(hilos).max(1);
+    std::thread::scope(|s| {
+        for (k, trozo) in out.chunks_mut(bloque).enumerate() {
+            let base = k * bloque;
+            let src = &bytes[base * 2..(base + trozo.len()) * 2];
+            s.spawn(move || {
+                for (dst, par) in trozo.iter_mut().zip(src.chunks_exact(2)) {
+                    *dst = u16::from_le_bytes([par[0], par[1]]);
+                }
+            });
+        }
+    });
+    out
+}
+
+fn bytes_a_u32(bytes: &[u8]) -> Vec<u32> {
+    let n = bytes.len() / 4;
+    let mut out = vec![0u32; n];
+    if n == 0 {
+        return out;
+    }
+    let hilos = hilos_carga();
+    let bloque = n.div_ceil(hilos).max(1);
+    std::thread::scope(|s| {
+        for (k, trozo) in out.chunks_mut(bloque).enumerate() {
+            let base = k * bloque;
+            let src = &bytes[base * 4..(base + trozo.len()) * 4];
+            s.spawn(move || {
+                for (dst, c) in trozo.iter_mut().zip(src.chunks_exact(4)) {
+                    *dst = u32::from_le_bytes([c[0], c[1], c[2], c[3]]);
+                }
+            });
+        }
+    });
+    out
+}
+
+fn bytes_a_u64(bytes: &[u8]) -> Vec<u64> {
+    let n = bytes.len() / 8;
+    let mut out = vec![0u64; n];
+    if n == 0 {
+        return out;
+    }
+    let hilos = hilos_carga();
+    let bloque = n.div_ceil(hilos).max(1);
+    std::thread::scope(|s| {
+        for (k, trozo) in out.chunks_mut(bloque).enumerate() {
+            let base = k * bloque;
+            let src = &bytes[base * 8..(base + trozo.len()) * 8];
+            s.spawn(move || {
+                for (dst, c) in trozo.iter_mut().zip(src.chunks_exact(8)) {
+                    *dst = u64::from_le_bytes(c.try_into().unwrap());
+                }
+            });
+        }
+    });
+    out
+}
 
 // ---------------------------------------------------------------- FNV-1a 64
 
@@ -188,32 +267,6 @@ fn hash_u16s(h: &mut Fnv, data: &[u16]) {
     }
 }
 
-fn hash_u32s(h: &mut Fnv, data: &[u32]) {
-    let mut buf = [0u8; 32 * 1024];
-    for trozo in data.chunks(8 * 1024) {
-        let mut n = 0;
-        for v in trozo {
-            let b = v.to_le_bytes();
-            buf[n..n + 4].copy_from_slice(&b);
-            n += 4;
-        }
-        h.bytes(&buf[..n]);
-    }
-}
-
-fn hash_u64s(h: &mut Fnv, data: &[u64]) {
-    let mut buf = [0u8; 32 * 1024];
-    for trozo in data.chunks(4 * 1024) {
-        let mut n = 0;
-        for v in trozo {
-            let b = v.to_le_bytes();
-            buf[n..n + 8].copy_from_slice(&b);
-            n += 8;
-        }
-        h.bytes(&buf[..n]);
-    }
-}
-
 // --------------------------------------------------- serialización de nodos
 
 /// Escribe un nodo, campo por campo, en 48 bytes little-endian.
@@ -261,26 +314,9 @@ fn checksum_of(index: &Index) -> u64 {
         h.bytes(&buf[..n]);
     }
     hash_u16s(&mut h, &index.names);
-    // Los bloques se hashean igual que se escriben: cantidad (u32) y datos.
-    let bloques: [usize; 6] = [
-        index.folded.len(),
-        index.dir_bytes.len(),
-        index.hijos_inicio.len(),
-        index.hijos.len(),
-        index.por_nombre.len(),
-        index.euler.len(),
-    ];
-    for (i, &len) in bloques.iter().enumerate() {
-        h.u32(len as u32);
-        match i {
-            0 => hash_u16s(&mut h, &index.folded),
-            1 => hash_u64s(&mut h, &index.dir_bytes),
-            2 => hash_u32s(&mut h, &index.hijos_inicio),
-            3 => hash_u32s(&mut h, &index.hijos),
-            4 => hash_u32s(&mut h, &index.por_nombre),
-            _ => hash_u32s(&mut h, &index.euler),
-        }
-    }
+    // Los bloques derivados NO entran en el checksum: son reconstruibles y se
+    // validan por estructura (cantidades y rangos). Hashear 120 MB más costaba
+    // ~80 ms en cada arranque, que es justo lo que se quería evitar.
     h.finish()
 }
 
@@ -552,6 +588,8 @@ impl<'a> LeReader<'a> {
 /// checksum de nodos+arena y la estructura del índice: `parent` en rango,
 /// `name_off + name_len <= name_units` y raíces en rango.
 pub fn load(path: &Path) -> Result<Index, LoadError> {
+    let depurar = std::env::var_os("CENSUS_DEBUG").is_some();
+    let t0 = std::time::Instant::now();
     let mut file = fs::File::open(path).map_err(LoadError::Io)?;
 
     // Cabecera completa primero; un archivo más corto es un truncado.
@@ -658,31 +696,27 @@ pub fn load(path: &Path) -> Result<Index, LoadError> {
     }
 
     // Arena UTF-16.
+    if depurar {
+        eprintln!("  [load] nodos en {:?}", t0.elapsed());
+    }
     let mut arena_bytes = vec![0u8; name_units as usize * 2];
     file.read_exact(&mut arena_bytes).map_err(eof_or_io)?;
     h.bytes(&arena_bytes);
-    let names: Vec<u16> = arena_bytes
-        .chunks_exact(2)
-        .map(|c| u16::from_le_bytes([c[0], c[1]]))
-        .collect();
+    let names = bytes_a_u16(&arena_bytes);
 
     // Bloques derivados (v2). Si faltan (cantidad 0), se recalculan abajo.
-    let leer_bloque = |file: &mut fs::File,
-                       h: &mut Fnv,
-                       techo: u32,
-                       cual: usize|
-     -> Result<(u32, Vec<u8>), LoadError> {
-        let mut cb = [0u8; 4];
-        file.read_exact(&mut cb).map_err(eof_or_io)?;
-        h.bytes(&cb);
-        let cant = u32::from_le_bytes(cb);
-        if cant > techo {
-            return Err(LoadError::BadIndex(format!(
-                "bloque derivado {cual} absurdo: {cant} > {techo}"
-            )));
-        }
-        Ok((cant, Vec::new()))
-    };
+    let leer_bloque =
+        |file: &mut fs::File, techo: u32, cual: usize| -> Result<(u32, Vec<u8>), LoadError> {
+            let mut cb = [0u8; 4];
+            file.read_exact(&mut cb).map_err(eof_or_io)?;
+            let cant = u32::from_le_bytes(cb);
+            if cant > techo {
+                return Err(LoadError::BadIndex(format!(
+                    "bloque derivado {cual} absurdo: {cant} > {techo}"
+                )));
+            }
+            Ok((cant, Vec::new()))
+        };
     let mut bloques: Vec<Vec<u8>> = Vec::with_capacity(6);
     let techos = [
         name_units.saturating_add(1),
@@ -695,35 +729,19 @@ pub fn load(path: &Path) -> Result<Index, LoadError> {
     let anchos = [2usize, 8, 4, 4, 4, 4];
     let mut cantidades = [0u32; 6];
     for i in 0..6 {
-        let (cant, _) = leer_bloque(&mut file, &mut h, techos[i], i)?;
+        let (cant, _) = leer_bloque(&mut file, techos[i], i)?;
         cantidades[i] = cant;
         let mut bytes = vec![0u8; cant as usize * anchos[i]];
         file.read_exact(&mut bytes).map_err(eof_or_io)?;
-        h.bytes(&bytes);
         bloques.push(bytes);
     }
 
-    let u16s = |b: &[u8]| -> Vec<u16> {
-        b.chunks_exact(2)
-            .map(|c| u16::from_le_bytes([c[0], c[1]]))
-            .collect()
-    };
-    let u32s = |b: &[u8]| -> Vec<u32> {
-        b.chunks_exact(4)
-            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect()
-    };
-    let u64s = |b: &[u8]| -> Vec<u64> {
-        b.chunks_exact(8)
-            .map(|c| u64::from_le_bytes(c.try_into().unwrap()))
-            .collect()
-    };
-    let folded = u16s(&bloques[0]);
-    let dir_bytes = u64s(&bloques[1]);
-    let hijos_inicio = u32s(&bloques[2]);
-    let hijos = u32s(&bloques[3]);
-    let por_nombre = u32s(&bloques[4]);
-    let euler = u32s(&bloques[5]);
+    let folded = bytes_a_u16(&bloques[0]);
+    let dir_bytes = bytes_a_u64(&bloques[1]);
+    let hijos_inicio = bytes_a_u32(&bloques[2]);
+    let hijos = bytes_a_u32(&bloques[3]);
+    let por_nombre = bytes_a_u32(&bloques[4]);
+    let euler = bytes_a_u32(&bloques[5]);
     if !folded.is_empty() && folded.len() != names.len() {
         return Err(LoadError::BadIndex(
             "folded no tiene el mismo largo que la arena".into(),
@@ -744,6 +762,9 @@ pub fn load(path: &Path) -> Result<Index, LoadError> {
         }
     }
 
+    if depurar {
+        eprintln!("  [load] arena en {:?}", t0.elapsed());
+    }
     // Cola opcional con la marca del journal.
     let mut cola = [0u8; 16];
     let marca = if file.read_exact(&mut cola).is_ok() {
@@ -779,6 +800,7 @@ pub fn load(path: &Path) -> Result<Index, LoadError> {
         euler,
         tin: Vec::new(),
         tout: Vec::new(),
+        compacto: Vec::new(),
         frn_sorted: false,
         overlay: std::sync::Arc::new(std::sync::RwLock::new(crate::overlay::Overlay::default())),
     };
@@ -795,12 +817,21 @@ pub fn load(path: &Path) -> Result<Index, LoadError> {
         && ix.hijos_inicio.len() == ix.nodes.len() + 1
         && ix.por_nombre.len() == ix.nodes.len()
         && ix.euler.len() == ix.nodes.len();
+    if depurar {
+        eprintln!("  [load] derivados en {:?}", t0.elapsed());
+    }
+    if depurar {
+        eprintln!("  [load] struct listo en {:?}", t0.elapsed());
+    }
     if completo {
         ix.rebuild_light();
     } else {
         ix.compute_dir_bytes();
         ix.compute_folded();
         ix.rebuild_indexes();
+    }
+    if depurar {
+        eprintln!("  [load] total {:?}", t0.elapsed());
     }
     Ok(ix)
 }
@@ -1009,13 +1040,12 @@ mod tests {
         let ix = dos_raices();
         save(&ix, t.path()).unwrap();
 
-        // Alteramos un byte en el medio de la arena de nombres (segunda
-        // mitad del archivo): no hay validación estructural ahí, así que el
-        // error tiene que ser exactamente Checksum.
+        // Alteramos un byte en el medio de la arena de nombres: no hay
+        // validación estructural ahí, así que el error tiene que ser Checksum.
         let bytes = fs::read(t.path()).unwrap();
         let arena_start = HEADER_LEN + 4 * ix.roots.len() + NODE_LEN * ix.nodes.len();
         assert!(arena_start < bytes.len());
-        let medio = (arena_start + bytes.len()) / 2;
+        let medio = arena_start + (bytes.len() - arena_start) / 4;
         let mut corrupto = bytes.clone();
         corrupto[medio] ^= 0x01;
         fs::write(t.path(), &corrupto).unwrap();
@@ -1024,6 +1054,9 @@ mod tests {
             otro => panic!("se esperaba Checksum, obtuve: {otro:?}"),
         }
 
+        // Los bloques derivados no entran en el checksum (se validan por
+        // estructura), así que corromper uno no necesariamente falla: lo que
+        // importa es que un byte de los nodos sí falle.
         // Ídem con un byte del medio de la zona de nodos.
         let medio_nodos = HEADER_LEN + 4 * ix.roots.len() + NODE_LEN * (ix.nodes.len() / 2);
         let mut corrupto = bytes.clone();

@@ -539,6 +539,79 @@ impl Index {
         false
     }
 
+    /// Escaneo de la fase 1 sobre el registro compacto (12 B por nodo).
+    ///
+    /// Compara directo contra la arena plegada sin tocar `Node` ni pedir el
+    /// nombre: es el camino caliente de toda búsqueda.
+    fn scan_nombres(&self, q: &Query) -> Vec<u32> {
+        let total = self.compacto.len();
+        if total == 0 || q.terms.is_empty() {
+            return Vec::new();
+        }
+        let filtros = q.files_only
+            || q.folders_only
+            || !q.exts.is_empty()
+            || q.min_mtime.is_some()
+            || q.max_mtime.is_some()
+            || q.size.is_some()
+            || q.dir.is_some()
+            || q.nonexistent_dir.is_some();
+
+        let hilos = std::thread::available_parallelism()
+            .map(|v| v.get())
+            .unwrap_or(4)
+            .clamp(1, 16);
+        let bloque = total.div_ceil(hilos);
+        let mut partes: Vec<Vec<u32>> = Vec::with_capacity(hilos);
+        std::thread::scope(|s| {
+            let mut handles = Vec::with_capacity(hilos);
+            for k in 0..hilos {
+                let ini = k * bloque;
+                let fin = ((k + 1) * bloque).min(total);
+                if ini >= fin {
+                    break;
+                }
+                handles.push(s.spawn(move || {
+                    let mut out = Vec::new();
+                    for pos in ini..fin {
+                        let c = &self.compacto[pos];
+                        if q.folders_only && c.flags & F_DIR == 0 {
+                            continue;
+                        }
+                        if q.files_only && c.flags & F_DIR != 0 {
+                            continue;
+                        }
+                        let off = c.off as usize;
+                        let Some(nombre) = self.folded.get(off..off + c.len as usize) else {
+                            continue;
+                        };
+                        if !q.terms.iter().all(|t| contains_folded(nombre, t)) {
+                            continue;
+                        }
+                        let id = pos as u32;
+                        // Los filtros caros sólo se pagan cuando el nombre ya
+                        // coincidió: son un puñado de nodos, no 1,6 M.
+                        if filtros && !self.passes_filters(q, id) {
+                            continue;
+                        }
+                        out.push(id);
+                    }
+                    out
+                }));
+            }
+            for h in handles {
+                if let Ok(v) = h.join() {
+                    partes.push(v);
+                }
+            }
+        });
+        let mut out: Vec<u32> = Vec::with_capacity(partes.iter().map(Vec::len).sum());
+        for p in partes {
+            out.extend(p);
+        }
+        out
+    }
+
     /// Recorre el índice en paralelo y devuelve los ids que cumplen `f`, en
     /// orden de índice. Trocear por bloques contiguos mantiene el orden.
     fn scan<F>(&self, f: F) -> Vec<u32>
@@ -594,7 +667,13 @@ impl Index {
     /// se mira si con el nombre no se llenó el tope. Ambas fases escanean en
     /// paralelo y comparan sobre el arena plegado.
     pub fn match_ids_split(&self, q: &Query, cap: usize) -> (Vec<u32>, usize) {
-        let mut ids = self.scan(|id| self.passes_filters(q, id) && self.name_has_all(q, id));
+        // Sin términos (sólo filtros: `file:`, `ext:`, `size:`) no hay nombre
+        // que comparar: se recorre con los filtros, que ya miran el nodo.
+        let mut ids = if q.terms.is_empty() {
+            self.scan(|id| self.passes_filters(q, id))
+        } else {
+            self.scan_nombres(q)
+        };
         // Un archivo que el journal vio borrar ya no existe aunque siga en la
         // foto, y uno recién creado no está en la foto todavía.
         {

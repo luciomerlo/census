@@ -215,7 +215,21 @@ impl Overlay {
 
     /// La decisión de reindexar la toma el llamador; acá sólo se avisa.
     pub fn compactar_si_hace_falta(&self) -> bool {
-        self.aplicados > TOPE_COMPACTAR
+        self.compactar_con_tope(TOPE_COMPACTAR)
+    }
+
+    /// Igual que [`Overlay::compactar_si_hace_falta`] pero con otro tope, para
+    /// poder probarlo sin aplicar cincuenta mil cambios.
+    pub fn compactar_con_tope(&self, tope: u64) -> bool {
+        self.aplicados > tope
+    }
+
+    /// Deja el overlay vacío conservando el watermark: se usa después de
+    /// reindexar, cuando la foto ya incluye todo lo que había acá.
+    pub fn vaciar_conservando_watermark(&mut self) {
+        let marca = self.watermark;
+        self.limpiar();
+        self.watermark = marca;
     }
 }
 
@@ -393,5 +407,6 @@ mod tests {
         assert!(!ov.compactar_si_hace_falta());
         ov.aplicados += 1;
         assert!(ov.compactar_si_hace_falta());
+        assert!(ov.compactar_con_tope(2));
     }
 }

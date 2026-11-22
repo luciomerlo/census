@@ -63,12 +63,28 @@ pub struct Index {
     pub euler: Vec<u32>,
     pub tin: Vec<u32>,
     pub tout: Vec<u32>,
+    /// Registro mínimo para escanear por nombre: 12 bytes en vez de 48. La
+    /// consulta lee 3 veces menos memoria y eso se nota en cada búsqueda.
+    pub compacto: Vec<Compacto>,
     /// `true` si `nodes` está ordenado por FRN (lo está cuando viene de la MFT).
     pub frn_sorted: bool,
     /// Cambios aplicados desde el snapshot (USN Journal, C2). Va detrás de un
     /// cerrojo porque el hilo del journal lo actualiza mientras la ventana y
     /// el IPC consultan. Se toma **una vez por consulta**, nunca por nodo.
     pub overlay: std::sync::Arc<std::sync::RwLock<crate::overlay::Overlay>>,
+}
+
+/// Lo mínimo para buscar por nombre: dónde está, cuánto mide, qué es y quién es
+/// su padre. Se arma una vez y se usa en cada consulta.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Compacto {
+    /// Offset en la arena plegada.
+    pub off: u32,
+    /// Largo en unidades UTF-16.
+    pub len: u16,
+    pub flags: u16,
+    /// Id del padre.
+    pub parent: u32,
 }
 
 pub struct Builder {
@@ -188,6 +204,7 @@ impl Builder {
             euler: Vec::new(),
             tin: Vec::new(),
             tout: Vec::new(),
+            compacto: Vec::new(),
             frn_sorted: false,
             overlay: std::sync::Arc::new(
                 std::sync::RwLock::new(crate::overlay::Overlay::default()),
@@ -440,6 +457,7 @@ impl Index {
             euler: Vec::new(),
             tin: Vec::new(),
             tout: Vec::new(),
+            compacto: Vec::new(),
             frn_sorted: false,
             overlay: std::sync::Arc::new(
                 std::sync::RwLock::new(crate::overlay::Overlay::default()),

@@ -15,9 +15,25 @@ impl Index {
     /// índice; es la única parte que cuesta (un `sort` de 1,2 M de ids).
     pub fn rebuild_indexes(&mut self) {
         self.frn_sorted = self.nodes.windows(2).all(|w| w[0].frn <= w[1].frn);
+        self.build_compacto();
         self.build_children();
         self.build_euler();
         self.build_name_order();
+    }
+
+    /// Arma el registro de escaneo: 12 bytes por nodo con lo justo para
+    /// comparar nombres y filtrar por tipo.
+    fn build_compacto(&mut self) {
+        self.compacto = self
+            .nodes
+            .iter()
+            .map(|n| crate::index::Compacto {
+                off: n.name_off,
+                len: n.name_len,
+                flags: n.flags,
+                parent: n.parent,
+            })
+            .collect();
     }
 
     /// Preorden y rango de subárbol de cada carpeta. Con esto, "todo lo que

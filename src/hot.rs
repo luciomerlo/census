@@ -32,6 +32,8 @@ pub enum Latido {
     Aplicados(usize),
     /// Los cambios se perdieron: hay que reindexar para no mentir.
     Reindexar,
+    /// El overlay creció demasiado (`n` cambios): conviene reindexar y vaciarlo.
+    Compactar(u64),
     /// No hay permisos para abrir la unidad (Census no está elevado).
     SinPermisos,
 }
@@ -136,6 +138,19 @@ impl Vigilante {
         if total == 0 {
             Latido::Nada
         } else {
+            // Se anuncia en activity-Census.json para que Wiz sepa que estamos
+            // tocando el índice, sin bloquear: son lotes de milisegundos.
+            let recursos = vec!["wcat".to_string(), "usn".to_string()];
+            let raices = vec![format!("{}:", self.letter)];
+            let _ = crate::activity::publicar("usn", &recursos, &raices, "running");
+            let (aplicados, compactar) = {
+                let ov = ix.overlay();
+                (ov.aplicados, ov.compactar_si_hace_falta())
+            };
+            if compactar {
+                let _ = crate::activity::pedir_reindexado("overlay grande");
+                return Latido::Compactar(aplicados);
+            }
             Latido::Aplicados(total)
         }
     }
@@ -160,9 +175,17 @@ pub fn arrancar(ix: Arc<Index>, letter: char) -> Option<std::thread::JoinHandle<
                         std::thread::sleep(CADA * 30);
                         continue;
                     }
+                    Latido::Compactar(n) => {
+                        eprintln!(
+                            "aviso: el overlay de cambios paso {n}; conviene reindexar                              el volumen (pedido anotado en WizeShared)"
+                        );
+                        std::thread::sleep(CADA * 30);
+                        continue;
+                    }
                     Latido::SinPermisos => {
                         // Sin elevación no hay journal: se corta el hilo en vez
                         // de gastar una vuelta cada dos segundos.
+                        crate::activity::retirar();
                         return;
                     }
                     _ => {}

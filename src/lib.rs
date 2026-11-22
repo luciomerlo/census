@@ -1,5 +1,6 @@
 //! Índice instantáneo de archivos para Windows.
 
+pub mod activity;
 pub mod ai;
 mod dirsize;
 #[cfg(feature = "gui")]
@@ -15,6 +16,7 @@ pub mod snapshot;
 #[cfg(feature = "gui")]
 pub mod theme;
 pub mod time;
+pub mod topology;
 pub mod usn;
 pub mod volumes;
 
