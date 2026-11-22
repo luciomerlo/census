@@ -201,7 +201,7 @@ mod tests {
                 file("a.sys", 2, 100),
                 file("b.dll", 2, 50),
             ],
-            names,
+            names: names.into(),
             ..Default::default()
         }
     }

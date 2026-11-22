@@ -40,7 +40,7 @@ pub struct Index {
     /// Un nodo raiz por unidad indexada (`C:`, `D:`, ...).
     pub roots: Vec<u32>,
     pub nodes: Vec<Node>,
-    pub names: Vec<u16>,
+    pub names: Arena<u16>,
     pub stats: Stats,
     pub built_at: i64,
     /// Tamaño recursivo por nodo (archivos: su tamaño; carpetas: la suma).
@@ -49,7 +49,7 @@ pub struct Index {
     pub vol_serials: Vec<u64>,
     /// Copia de `names` en minúsculas y sin acentos: buscar no vuelve a plegar
     /// carácter por carácter en cada consulta.
-    pub folded: Vec<u16>,
+    pub folded: Arena<u16>,
     /// Hijos por carpeta en formato CSR: los hijos de `id` son
     /// `hijos[hijos_inicio[id]..hijos_inicio[id+1]]`.
     pub hijos_inicio: Vec<u32>,
@@ -85,6 +85,113 @@ pub struct Compacto {
     pub flags: u16,
     /// Id del padre.
     pub parent: u32,
+}
+
+/// Arena de valores: propia o prestada de un archivo mapeado.
+///
+/// El snapshot se mapea en memoria y las dos arenas grandes (`names` y
+/// `folded`, 156 MB juntas) se leen directo del mapa: no se copian. El resto
+/// (nodos y bloques chicos) se sigue copiando porque es más simple y se toca
+/// distinto.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Datos<T: Copy> {
+    #[default]
+    Vacio,
+    Propio(*const T, usize),
+    Mapeado(*const T, usize),
+}
+
+/// # Safety
+/// `Datos` sólo se usa dentro de `Arena`, que garantiza que el puntero sigue
+/// vivo: o apunta a un `Vec` que la arena posee, o a un mapa que se filtra a
+/// propósito para que dure lo que el proceso.
+#[derive(Debug)]
+pub struct Arena<T: Copy> {
+    datos: Datos<T>,
+    /// `Vec` dueño cuando la arena es propia.
+    propio: Option<Vec<T>>,
+}
+
+impl<T: Copy> Default for Arena<T> {
+    fn default() -> Self {
+        Arena {
+            datos: Datos::Vacio,
+            propio: None,
+        }
+    }
+}
+
+impl<T: Copy> Arena<T> {
+    pub fn propio(v: Vec<T>) -> Self {
+        Arena {
+            datos: Datos::Vacio,
+            propio: Some(v),
+        }
+    }
+
+    /// Arena prestada del mapa. El mapa tiene que vivir más que el índice
+    /// (se filtra a propósito al cargar el snapshot).
+    pub fn prestado(slice: &'static [T]) -> Self {
+        Arena {
+            datos: Datos::Vacio,
+            propio: None,
+        }
+        .con(slice)
+    }
+
+    fn con(mut self, slice: &'static [T]) -> Self {
+        self.datos = Datos::Mapeado(slice.as_ptr(), slice.len());
+        self
+    }
+
+    pub fn as_slice(&self) -> &[T] {
+        if let Some(v) = &self.propio {
+            return v;
+        }
+        match self.datos {
+            Datos::Mapeado(p, n) | Datos::Propio(p, n) if !p.is_null() => {
+                // SAFETY: el puntero viene de un `Vec` propio o de un mapa
+                // filtrado; `n` es su largo exacto.
+                unsafe { std::slice::from_raw_parts(p, n) }
+            }
+            _ => &[],
+        }
+    }
+}
+
+// Las arenas son de sólo lectura una vez construidas: se comparten entre los
+// hilos de consulta sin sincronización. Los punteros apuntan a memoria que vive
+// tanto como el índice (Vec propio o mapa filtrado).
+unsafe impl<T: Copy + Send> Send for Arena<T> {}
+unsafe impl<T: Copy + Sync> Sync for Arena<T> {}
+
+impl<T: Copy> std::ops::Deref for Arena<T> {
+    type Target = [T];
+    fn deref(&self) -> &[T] {
+        self.as_slice()
+    }
+}
+
+impl<T: Copy + PartialEq> PartialEq for Arena<T> {
+    fn eq(&self, otro: &Self) -> bool {
+        self.as_slice() == otro.as_slice()
+    }
+}
+
+impl<T: Copy + Eq> Eq for Arena<T> {}
+
+impl<T: Copy> From<Vec<T>> for Arena<T> {
+    fn from(v: Vec<T>) -> Self {
+        Arena::propio(v)
+    }
+}
+
+impl<'a, T: Copy> IntoIterator for &'a Arena<T> {
+    type Item = &'a T;
+    type IntoIter = std::slice::Iter<'a, T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.as_slice().iter()
+    }
 }
 
 pub struct Builder {
@@ -191,12 +298,12 @@ impl Builder {
             root,
             roots: vec![root],
             nodes: self.nodes,
-            names: self.names,
+            names: Arena::propio(self.names),
             stats,
             built_at: 0,
             dir_bytes: Vec::new(),
             vol_serials: Vec::new(),
-            folded: Vec::new(),
+            folded: Arena::default(),
             hijos_inicio: Vec::new(),
             hijos: Vec::new(),
             por_nombre: Vec::new(),
@@ -251,7 +358,7 @@ impl Index {
 
     /// Construye el arena plegado, con exactamente los mismos offsets.
     pub fn compute_folded(&mut self) {
-        self.folded = self.names.iter().map(|u| fold(*u)).collect();
+        self.folded = Arena::propio(self.names.iter().map(|u| fold(*u)).collect());
     }
 
     pub fn name_string(&self, id: u32) -> String {
@@ -444,12 +551,12 @@ impl Index {
             root,
             roots,
             nodes,
-            names,
+            names: Arena::propio(names),
             stats,
             built_at,
             dir_bytes: Vec::new(),
             vol_serials: Vec::new(),
-            folded: Vec::new(),
+            folded: Arena::default(),
             hijos_inicio: Vec::new(),
             hijos: Vec::new(),
             por_nombre: Vec::new(),

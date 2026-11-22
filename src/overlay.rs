@@ -285,7 +285,7 @@ mod tests {
                 attrs: 0,
                 frn: 5,
             }],
-            names: nombres,
+            names: nombres.into(),
             roots: vec![0],
             ..Index::default()
         }
