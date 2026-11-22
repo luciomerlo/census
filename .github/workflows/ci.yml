@@ -34,6 +34,14 @@ jobs:
     # Windows on ARM: el mismo codigo, sin nada especifico de x86_64.
     # Corre nativo en un runner ARM, no cross-compilado: asi se ejecutan los
     # tests de verdad (MFT y USN se comportan igual en ARM64).
+    #
+    # `windows-11-arm` esta disponible porque el repo es publico. Si pasa a
+    # privado, este runner no aparece: hay que cross-compilar con
+    #   - uses: ilammy/msvc-dev-cmd@v1
+    #     with: {arch: amd64_arm64}
+    # y quedarse solo con clippy + build (los tests no se pueden ejecutar).
+    # No hace falta por dependencias: no hay sqlite, ni std::arch, ni
+    # is_x86_feature_detected, ni target_feature en ningun crate.
     runs-on: windows-11-arm
     steps:
       - uses: actions/checkout@v4
