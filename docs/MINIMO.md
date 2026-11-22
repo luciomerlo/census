@@ -109,7 +109,8 @@ GET /v1/stats
 - `label` es el nombre visible; `model` es hardware o `""`.
 - `used_bytes = total_bytes - free_bytes`, nunca negativo.
 - `online` es verdadero sólo si el volumen está montado ahora.
-- `marca` es opaco; el cliente no lo interpreta.
+- `marca` es opaco; el cliente no lo interpreta. Si el snapshot no la tiene, es `null` (no se omite el campo).
+- `marca`: string opaco o `null`; nunca se omite.
 - `identity_status`: `ok | serial_ambiguo | posible_duplicado | sin_identidad | cloud`.
 - `federable` es `true` sólo con `identity_status:"ok"` y `volume_id` real. En
   v1 nadie federa; el campo queda para no migrar el JSON después.
