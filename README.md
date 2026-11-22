@@ -22,7 +22,7 @@ no compilan en las otras.
 | Plataforma | Carpeta | Cómo enumera | Identidad de disco | Snapshot | Estado |
 |---|---|---|---|---|---|
 | **Windows** | `src/` | MFT de NTFS (lectura en bloque); recorrido si no hay elevación o el FS no es NTFS | `DiskHwId` por `IOCTL_STORAGE_QUERY_PROPERTY` + GUID de volumen | `.wcat` | Motor, GUI, IPC y MCP funcionando y medidos |
-| **macOS** | `mac/` | `getattrlistbulk`; FSEvents para cambios | `DiskUUID` / `VolumeUUID` | `.cnx` | En desarrollo |
+| **macOS** | `mac/` | `getattrlistbulk`; FSEvents para cambios | `DiskUUID`/`VolumeUUID` + offset de partición | `.cnx` (y `.wcat` exportado) | Alpha: núcleo, consulta, volúmenes y fuente rápida; snapshot/CLI/MCP/FSEvents en curso |
 | **Linux** | `linux/` | `getdents64` + `statx` en paralelo; vías nativas por FS (btrfs/XFS/ext4) como acelerador opcional | udev/sysfs: `ID_SERIAL_SHORT`, `ID_WWN_WITH_EXTENSION`, modelo, capacidad y offset de partición | `.cns` | Base, índice, volúmenes, nube y primitivas de `diskid`; scanner/snapshot/consultas en curso |
 
 ### Lo que comparten
@@ -44,6 +44,37 @@ no compilan en las otras.
 - **Catálogo entre PCs**: los índices se comparten por Tailscale. Si coinciden
   `pc_id` y `volume_id` gana la `Marca` más nueva; si no, se desempata por contenido
   y `built_at`, porque los relojes de PCs distintas no son confiables.
+
+### macOS, en concreto
+
+`mac/` es un crate independiente (`cd mac && cargo test`). Compila para Intel
+(`x86_64-apple-darwin`), Apple silicon (`aarch64-apple-darwin`) y universal2. La
+enumeración usa `getattrlistbulk(2)`: un syscall devuelve nombre, inodo, padre,
+tipo, tamaño, espacio asignado, `mtime` y `btime` de muchos hijos, sin un `lstat`
+por archivo. Los directorios se reparten entre workers y el resultado se arma con
+el mismo `Compacto` de 12 B, arena de nombres, hijos CSR y subárboles Euler que
+las otras plataformas.
+
+La identidad no usa la letra ni `/Volumes/X`: `DiskHwId` sale de
+`diskutil info -plist` (serial o `DiskUUID`), `volume_id = hash(DiskHwId ||
+offset || fs_uuid)` y el punto de montaje es sólo presentación. Si el mismo disco
+aparece mañana en `/Volumes/Backup 1`, se remapea el prefijo del snapshot en vez
+de reindexar. Dos discos distintos que alternan en `/Volumes/Backup` tienen
+`DiskHwId` distinto y **nunca** se mezclan; el ausente queda `offline`. Sin
+identidad suficiente el volumen queda `sin_identidad` y no se publica en
+federación.
+
+La nube usa `cloud_id = FNV-1a64(provider || account || unidad)`, sin ruta ni
+letra. El parser cubre `~/Library/CloudStorage/GoogleDrive-<cuenta>/Shared
+drives/<drive>`, iCloud, OneDrive y Dropbox; para rclone/FUSE hay alias manual
+(`cloud_aliases`). Mismo `cloud_id` ⇒ mismo volumen, aunque lo monte otro
+programa en otra PC; sin cuenta atribuible queda `posible_duplicado` y se avisa.
+
+Hoy funcionan `census version`, `census volumes`, `census cloud-id` y
+`census fold`. Faltan el snapshot `.cnx` por volumen, el catálogo, `export
+--wcat`, FSEvents, la CLI completa y el servidor MCP/Tailscale. El detalle y el
+plan de pruebas en VM están en [`mac/PENDIENTE.md`](mac/PENDIENTE.md); el diseño
+en [`mac/README.md`](mac/README.md).
 
 ### Linux, en concreto
 
