@@ -64,26 +64,6 @@ El binario queda en `target/<target>/release/census` y, para universal2, en
 `dist/Census-AppleSilicon.app`, `dist/Census-universal.app` y sus `.zip` con
 `SHA256SUMS.txt`.
 
-### Cross-compilar desde Windows o Linux, sin Mac
-
-Para generar el `universal2` sin runner macOS se puede usar Zig como enlazador:
-
-```powershell
-python -m pip install --user cargo-zigbuild ziglang
-./scripts/build-cross.ps1        # Windows
-```
-
-```bash
-python3 -m pip install --user cargo-zigbuild ziglang
-./scripts/build-cross.sh         # Linux/WSL
-```
-
-La salida es `target/universal2-apple-darwin/release/census`, un Mach-O con
-`x86_64` y `arm64`. Zig avisa que no encuentra el SDK de macOS; el binario se
-enlaza igual porque Census sólo usa `libc`. Esto sirve para CLI/daemon: **no**
-compila SwiftUI, no ejecuta pruebas en macOS y no firma. Para la `.app` firmada
-y notarizada, el camino es el workflow `mac.yml` en runners macOS.
-
 En Linux/Windows se puede verificar el código portable y el código macOS sin
 enlazar:
 
