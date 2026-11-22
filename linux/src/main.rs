@@ -113,17 +113,30 @@ fn volumes_cmd(args: &[String]) -> ExitCode {
     let rows: Vec<serde_json::Value> = all
         .iter()
         .map(|m| {
-            let marca = snap
-                .as_ref()
-                .filter(|ix| ix.roots.iter().any(|r| r.volume_id == m.volume_id))
+            let root = snap.as_ref().and_then(|ix| {
+                ix.roots
+                    .iter()
+                    .find(|r| r.volume_id == m.volume_id)
+                    .map(|_| ix)
+            });
+            let marca = root
                 .map(|ix| serde_json::Value::String(ix.marca()))
                 .unwrap_or(serde_json::Value::Null);
+            let used = m.total.saturating_sub(m.free);
             serde_json::json!({
                 "volume_id": m.volume_id,
                 "disk_hw_id": m.disk_hw_id,
                 "identity_status": m.identity_status,
                 "federable": m.federable,
                 "mount": m.path,
+                "label": m.label,
+                "fs": m.fs,
+                "total_bytes": m.total,
+                "free_bytes": m.free,
+                "used_bytes": used,
+                "removable": m.removable,
+                "online": true,
+                "built_at": root.map(|ix| ix.built_at).unwrap_or(0),
                 "model": m.model,
                 "serial": m.serial,
                 "capacity": m.capacity,

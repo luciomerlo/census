@@ -80,7 +80,7 @@ fn handle(ix: &Index, opts: &Options, ctx: &CloudContext, request: Request) -> R
                         "used_bytes": used,
                         "removable": m.removable,
                         "online": true,
-                        "built_at": root.map(|r| r.scanned_at).unwrap_or(0),
+                        "built_at": root.map(|_| ix.built_at).unwrap_or(0),
                         "model": m.model,
                         "serial": m.serial,
                         "partition_offset": m.partition_offset,
