@@ -158,3 +158,78 @@ census atlas list                 # discos conocidos por PC, con versión y esta
 6. **Modo hashes** y filtrado de raíces ocultas.
 
 Los pasos 1 y 2 no dependen de nada de red y son los que fijan el contrato.
+
+## 9. Nube compartida: identidad, duplicados y selección por app
+
+El caso que rompe todo si no se resuelve: **el mismo Google Drive compartido**
+puede aparecer montado por programas distintos (Google Drive para escritorio,
+rclone, `google-drive-ocamlfuse`, el de Wiz, el de Sort) **y en varias PCs a la
+vez**. Sin identidad de nube, un archivo del drive compartido aparece 5 veces.
+
+### 9.1 Identidad de un volumen de nube
+
+```
+cloud_id = hash(provider || account || unidad)
+```
+
+| Campo | Windows | Linux | macOS |
+|---|---|---|---|
+| `provider` | `gdrive`, `onedrive`, `dropbox`… (por etiqueta de volumen y proveedor detectado) | igual, por tipo de montaje (`fuse.rclone`, `gvfs`, …) | igual, por `diskutil`/`statfs` |
+| `account` | el correo de la etiqueta (`lucio@… - Google Drive`) | cuenta del montaje o `rclone config` | idem |
+| `unidad` | "Mi unidad" o el nombre del drive compartido | idem | idem |
+
+Regla: **la identidad de nube no usa la letra de unidad**, igual que la de
+disco no usa la letra. La letra es de la sesión, el `cloud_id` es del contenido.
+
+### 9.2 Duplicados
+
+1. Si dos entradas comparten `cloud_id` → **son el mismo volumen**: Atlas las
+   colapsa y muestra una sola vez, con las ubicaciones reales adentro.
+2. Si no se puede atribuir `cloud_id` (montaje raro, sin etiqueta), se marca
+   **`posible_duplicado`** y se muestra la advertencia; **nunca** se fusiona en
+   silencio.
+3. El usuario puede resolverlo a mano:
+   `census atlas unir <volumen-a> <volumen-b>` (los trata como el mismo) y
+   `census atlas separar <volumen>` (deshace).
+
+Lo mismo aplica entre PCs: el hub compara `cloud_id` de los snapshots de todas
+las máquinas. Un drive compartido indexado en tres PCs es **un** volumen.
+
+### 9.3 Activar o desactivar unidades, por app
+
+- Cada app tiene su propia lista, como hoy: `settings.ini` de Census,
+  la de Wiz y la de Sort. Ninguna escribe la de otra.
+- La clave es **`volume_id`** (local) o **`cloud_id`** (nube), nunca la letra.
+- Una app puede indexar un drive que otra ignora; no se sincronizan listas.
+  Lo único compartido es la **identidad**, para que Atlas sepa agrupar.
+
+### 9.4 Elegir qué leer de las otras PCs
+
+Cuando Windows consulta a otra PC, la consulta lleva una **selección de
+volúmenes remotos** `(pc_id, volume_id)`:
+
+- por defecto: **todo lo online**;
+- los **offline** se incluyen sólo si el usuario los marcó
+  (`census atlas incluir <pc> <volumen>`) o si usa `--todas`;
+- cada resultado dice de dónde salió y si es online/offline/stale.
+
+La selección se guarda en `%LOCALAPPDATA%\Census\atlas\seleccion.json` y viaja
+en la consulta federada, así el peer no tiene que adivinar.
+
+### 9.5 Cuando la detección falla
+
+El usuario puede desactivar a mano, y eso **manda sobre la detección**:
+
+```
+census atlas excluir <pc> <volumen>     # no lo leo más de esa PC
+census atlas incluir <pc> <volumen>
+census atlas unir <volumen-a> <volumen-b>
+census atlas separar <volumen>
+census atlas estado                    # qué está excluido y por qué
+```
+
+Archivo: `%LOCALAPPDATA%\Census\atlas\overrides.json`, con `motivo` y fecha para
+que después se entienda por qué se excluyó algo.
+
+**Regla dura:** si la detección automática y la decisión manual se contradicen,
+gana la manual. Un duplicado visible es peor que un volumen faltante avisado.
