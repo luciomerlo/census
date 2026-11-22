@@ -1,2 +1,5 @@
 /target
 /dist
+
+# Artefactos descargados de CI (apps .app)
+/dist-apps
