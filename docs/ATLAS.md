@@ -233,3 +233,67 @@ que después se entienda por qué se excluyó algo.
 
 **Regla dura:** si la detección automática y la decisión manual se contradicen,
 gana la manual. Un duplicado visible es peor que un volumen faltante avisado.
+
+## 10. Identidad por hardware, no por letra (regla dura)
+
+La letra de unidad **no es identidad**. Cambia al reasignar en el Administrador
+de discos, y dos discos externos distintos se conectan en momentos distintos y
+reciben la misma letra (`E:` hoy es un Seagate, mañana es un WD). Indexar por
+letra mezcla dos discos en el mismo índice y es irrecuperable.
+
+### 10.1 Tres niveles, de más físico a más lógico
+
+```
+DiskHwId   = hash(serial || vendor || model || capacidad)     # el aparato
+volume_id  = hash(DiskHwId || offset_particion || fs_uuid)     # la partición
+mount      = letra o punto de montaje                          # SÓLO presentación
+```
+
+- **`DiskHwId`** identifica el aparato físico. Windows: número de serie y modelo
+  de `IOCTL_STORAGE_QUERY_PROPERTY` (`StorageDeviceProperty`, offset de serie)
+  y, si está, `StorageDeviceUniqueIdProperty`. Fallback: GUID de disco GPT.
+- **`volume_id`** identifica la partición: `DiskHwId` + offset/tamaño de partición
+  + UUID del filesystem. Dos particiones del mismo disco son volúmenes distintos.
+- **`mount`** (letra o punto de montaje) se guarda como atributo **de
+  presentación**, se refresca en cada escaneo y **nunca** entra en una clave.
+
+Windows además puede usar `GetVolumeNameForVolumeMountPointW`
+(`\?\Volume{GUID}\`), que es estable por volumen y sobrevive al cambio de letra.
+
+### 10.2 Qué pasa cuando cambia la letra
+
+- Se detecta el mismo `volume_id` en otro `mount` → **se remapea el prefijo de
+  ruta** del índice y del snapshot. No se reindexa: es el mismo volumen, con
+  otra etiqueta de presentación.
+- Si el volumen no está, el índice queda `offline` con su `volume_id` intacto y
+  vuelve a engancharse cuando reaparece, con la letra que tenga.
+
+### 10.3 Letra repetida entre discos distintos
+
+Dos discos externos que se conectan alternadamente en `E:` tienen `DiskHwId`
+distinto → **no se mezclan**: son dos volúmenes, y el que no está conectado
+queda `offline`. Esto es exactamente el bug que evita la identidad por hardware.
+
+### 10.4 Trampa real: puentes USB baratos
+
+Muchas cajas USB-SATA informan **el número de serie del puente**, no el del
+disco: dos discos distintos devuelven la misma serie. Mitigación:
+
+1. Si la misma `serial` aparece con distinta capacidad o distinto modelo →
+   `serial_ambiguo` y se agrega `capacidad + modelo + GUID de disco` al hash.
+2. Si aun así colisiona → se marca `posible_duplicado` y se pide confirmación
+   manual (`atlas unir`/`atlas separar`), nunca fusión silenciosa.
+
+### 10.5 Otras fuentes
+
+| Tipo | Identidad |
+|---|---|
+| Disco local | `DiskHwId` (serial + modelo + capacidad) |
+| Partición / volumen | `volume_id` (DiskHwId + offset + fs_uuid) |
+| Nube | `cloud_id` (provider + account + unidad) — §9 |
+| Recurso de red | `share_id` (host + share + account) |
+| Directorio suelto (`--root`) | `dir:<hostname>:<path>` |
+
+**Regla:** si la identidad no se puede determinar, el volumen **no se indexa en
+federación**; aparece como `sin_identidad` y se resuelve a mano. Preferimos un
+volumen faltante avisado antes que dos discos fusionados por error.

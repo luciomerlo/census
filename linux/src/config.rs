@@ -1,4 +1,4 @@
-//! Configuracion, rutas XDG y token de comparticion.
+//! Configuracion, rutas XDG, token de comparticion e identidad de la PC.
 //!
 //! Todo se puede redirigir con `CENSUS_DATA_DIR` y `CENSUS_CONFIG_DIR`, que es
 //! lo que usan los tests para no tocar el perfil real.
@@ -8,6 +8,8 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+
+use crate::cloud::CloudOverride;
 
 fn d_port() -> u16 {
     8478
@@ -46,6 +48,9 @@ pub struct Config {
     /// Si no esta vacio, la API exige `Authorization: Bearer <token>`.
     #[serde(default)]
     pub token: String,
+    /// Identidad estable de esta PC (32 hex). La usa Atlas.
+    #[serde(default)]
+    pub pc_id: String,
     /// Etiqueta del entorno que se publica en el catalogo.
     #[serde(default)]
     pub env: String,
@@ -54,19 +59,31 @@ pub struct Config {
     pub roots: Vec<String>,
     #[serde(default = "default_excludes")]
     pub exclude: Vec<String>,
-    /// 0 = un hilo por nucleo disponible.
     #[serde(default)]
     pub jobs: usize,
-    /// Cuando dos PC tienen el mismo disco, preferir la copia local si esta
-    /// empatada en version.
+    /// Cuando dos PC tienen el mismo volumen, preferir la copia local si el
+    /// empate es exacto (la version mas nueva siempre gana).
     #[serde(default)]
     pub prefer_local: bool,
-    /// Comando de Tailscale (por si esta en otra ruta).
     #[serde(default = "d_tailscale")]
     pub tailscale: String,
-    /// Escuchar cambios y reindexar en caliente al correr `serve`.
     #[serde(default = "d_true")]
     pub watch: bool,
+    /// Overrides manuales de identidad de nube; mandan sobre la deteccion.
+    #[serde(default)]
+    pub cloud_overrides: Vec<CloudOverride>,
+    /// Si no esta vacia, solo se muestran/consultan estas claves.
+    #[serde(default)]
+    pub enabled_volumes: Vec<String>,
+    /// Claves siempre apagadas para esta app.
+    #[serde(default)]
+    pub disabled_volumes: Vec<String>,
+    /// Offline es opt-in: por defecto no se leen copias de peers apagados.
+    #[serde(default)]
+    pub offline_enabled: bool,
+    /// Si `offline_enabled`, limita a estas claves (vacio = todas).
+    #[serde(default)]
+    pub offline_volumes: Vec<String>,
 }
 
 impl Default for Config {
@@ -75,6 +92,7 @@ impl Default for Config {
             port: d_port(),
             bind: d_bind(),
             token: String::new(),
+            pc_id: String::new(),
             env: String::new(),
             roots: Vec::new(),
             exclude: default_excludes(),
@@ -82,6 +100,11 @@ impl Default for Config {
             prefer_local: false,
             tailscale: d_tailscale(),
             watch: true,
+            cloud_overrides: Vec::new(),
+            enabled_volumes: Vec::new(),
+            disabled_volumes: Vec::new(),
+            offline_enabled: false,
+            offline_volumes: Vec::new(),
         }
     }
 }
@@ -91,17 +114,23 @@ impl Config {
         let path = config_path();
         match fs::read_to_string(&path) {
             Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
-                eprintln!("aviso: {} no es JSON valido ({e}); se usan valores por defecto", path.display());
+                eprintln!(
+                    "aviso: {} no es JSON valido ({e}); se usan valores por defecto",
+                    path.display()
+                );
                 Config::default()
             }),
             Err(_) => Config::default(),
         }
     }
 
-    /// Guarda la configuracion. Crea el token si falta.
+    /// Guarda la configuracion. Crea token y pc_id si faltan.
     pub fn save(&mut self) -> Result<(), String> {
         if self.token.trim().is_empty() {
-            self.token = generate_token();
+            self.token = generate_id();
+        }
+        if self.pc_id.trim().is_empty() {
+            self.pc_id = generate_id();
         }
         let path = config_path();
         if let Some(dir) = path.parent() {
@@ -111,7 +140,8 @@ impl Config {
         let mut tmp = path.clone();
         tmp.set_extension("json.tmp");
         {
-            let mut f = fs::File::create(&tmp).map_err(|e| format!("crear {}: {e}", tmp.display()))?;
+            let mut f =
+                fs::File::create(&tmp).map_err(|e| format!("crear {}: {e}", tmp.display()))?;
             f.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
             f.write_all(b"\n").ok();
         }
@@ -124,13 +154,23 @@ impl Config {
         Ok(())
     }
 
-    /// Token existente o uno nuevo, sin escribir nada si ya habia.
     pub fn token_or_create(&mut self) -> String {
         if self.token.trim().is_empty() {
-            self.token = generate_token();
+            self.token = generate_id();
+            if self.pc_id.trim().is_empty() {
+                self.pc_id = generate_id();
+            }
             let _ = self.save();
         }
         self.token.clone()
+    }
+
+    pub fn ensure_pc_id(&mut self) -> String {
+        if self.pc_id.trim().is_empty() {
+            self.pc_id = generate_id();
+            let _ = self.save();
+        }
+        self.pc_id.clone()
     }
 
     pub fn env_label(&self) -> String {
@@ -144,6 +184,33 @@ impl Config {
 
     pub fn exclude_paths(&self) -> Vec<PathBuf> {
         self.exclude.iter().map(PathBuf::from).collect()
+    }
+
+    pub fn host_info(&self) -> crate::index::HostInfo {
+        crate::index::HostInfo {
+            hostname: hostname(),
+            env: self.env_label(),
+            os: std::env::consts::OS.into(),
+            arch: std::env::consts::ARCH.into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+            tailscale: String::new(),
+        }
+    }
+
+    /// Filtro por app: `disabled` gana, despues `enabled` (si no esta vacio).
+    pub fn volume_enabled(&self, key: &str) -> bool {
+        if self.disabled_volumes.iter().any(|v| v == key) {
+            return false;
+        }
+        self.enabled_volumes.is_empty() || self.enabled_volumes.iter().any(|v| v == key)
+    }
+
+    /// Offline opt-in: sin `offline_enabled` no se lee nada de un peer caido.
+    pub fn offline_allowed(&self, key: &str) -> bool {
+        if !self.offline_enabled {
+            return false;
+        }
+        self.offline_volumes.is_empty() || self.offline_volumes.iter().any(|v| v == key)
     }
 }
 
@@ -236,10 +303,6 @@ pub fn registry_path() -> PathBuf {
     mirrors_dir().join("index.json")
 }
 
-pub fn cache_path() -> PathBuf {
-    data_dir().join("cache.cns")
-}
-
 pub fn sanitize(s: &str) -> String {
     s.chars()
         .map(|c| {
@@ -259,7 +322,7 @@ pub fn ensure_dirs() -> Result<(), String> {
     Ok(())
 }
 
-fn generate_token() -> String {
+fn generate_id() -> String {
     let mut bytes = [0u8; 16];
     let mut ok = false;
     #[cfg(unix)]
@@ -270,7 +333,6 @@ fn generate_token() -> String {
         }
     }
     if !ok {
-        // Fallback sin dependencias: tiempo + pid + direccion del stack.
         let mut seed = crate::time::now_ns() as u64
             ^ ((std::process::id() as u64) << 32)
             ^ (&bytes as *const _ as usize as u64);
@@ -289,16 +351,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tokens_are_32_hex() {
-        let t = generate_token();
+    fn ids_are_32_hex() {
+        let t = generate_id();
         assert_eq!(t.len(), 32);
         assert!(t.chars().all(|c| c.is_ascii_hexdigit()));
-        assert_ne!(t, generate_token());
+        assert_ne!(t, generate_id());
     }
 
     #[test]
     fn sanitize_peer_names() {
         assert_eq!(sanitize("nb-lucio.tailnet.ts.net."), "nb-lucio.tailnet.ts.net.");
         assert_eq!(sanitize("a/b c"), "a_b_c");
+    }
+
+    #[test]
+    fn volume_filters() {
+        let mut c = Config::default();
+        assert!(c.volume_enabled("v1"));
+        c.disabled_volumes.push("v1".into());
+        assert!(!c.volume_enabled("v1"));
+        c.enabled_volumes.push("v2".into());
+        assert!(!c.volume_enabled("v1"));
+        assert!(c.volume_enabled("v2"));
+        assert!(!c.offline_allowed("v1"));
+        c.offline_enabled = true;
+        assert!(c.offline_allowed("v1"));
     }
 }

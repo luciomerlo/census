@@ -275,6 +275,14 @@ pub struct Stats {
 pub struct Volume {
     /// `hash(uuid || fstype || total_size || nombre)`.
     pub id: VolumeId,
+    /// Identidad de nube `hash(provider || account || unidad)`, si se pudo
+    /// atribuir. No usa la ruta ni la letra: el mismo drive montado por otra
+    /// app o en otra PC da el mismo `cloud_id`.
+    #[serde(default)]
+    pub cloud_id: Option<String>,
+    /// Montaje de nube sin identidad atribuible: se avisa, no se fusiona.
+    #[serde(default)]
+    pub possible_duplicate: bool,
     pub uuid: VolumeUuid,
     pub name: String,
     pub mount: String,
