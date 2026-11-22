@@ -89,7 +89,10 @@ impl FileId {
     }
 
     pub fn hex(&self) -> String {
-        format!("{}:{:x}:{:x}", self.key.volume_id, self.key.ino, self.key.gen)
+        format!(
+            "{}:{:x}:{:x}",
+            self.key.volume_id, self.key.ino, self.key.gen
+        )
     }
 }
 
@@ -271,10 +274,37 @@ pub struct Stats {
     pub build_ms: u64,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IdentityState {
+    #[default]
+    Ok,
+    /// Hay montaje pero no se pudo determinar disco/partición: se indexa en
+    /// local, no se publica en federación.
+    SinIdentidad,
+    /// Nube con `cloud_id` atribuido.
+    Cloud,
+    /// Nube sin cuenta/unidad atribuible: aviso, nunca fusión silenciosa.
+    PosibleDuplicado,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Volume {
-    /// `hash(uuid || fstype || total_size || nombre)`.
+    /// `hash(DiskHwId || offset_particion || fs_uuid)`. La letra o el punto
+    /// de montaje **no** entran en la clave.
     pub id: VolumeId,
+    /// Identidad del aparato físico: serial/vendor/model/capacidad o, si
+    /// falta el serial, el `DiskUUID` del disco entero.
+    #[serde(default)]
+    pub disk_hw_id: Option<String>,
+    #[serde(default)]
+    pub disk_guid: Option<String>,
+    #[serde(default)]
+    pub serial: Option<String>,
+    #[serde(default)]
+    pub partition_offset: u64,
+    #[serde(default)]
+    pub identity_state: IdentityState,
     /// Identidad de nube `hash(provider || account || unidad)`, si se pudo
     /// atribuir. No usa la ruta ni la letra: el mismo drive montado por otra
     /// app o en otra PC da el mismo `cloud_id`.
@@ -285,6 +315,7 @@ pub struct Volume {
     pub possible_duplicate: bool,
     pub uuid: VolumeUuid,
     pub name: String,
+    /// Punto de montaje: **sólo presentación**. Se refresca en cada escaneo.
     pub mount: String,
     pub fs: String,
     pub total: u64,
@@ -327,20 +358,46 @@ pub fn fnv1a64(parts: &[&[u8]]) -> u64 {
     h
 }
 
-/// `volume_id` normativo: FNV-1a 64 hex minúsculas de
-/// `uuid || fstype || total_size`, con separador 0 para que no haya
-/// ambigüedad entre campos.
-pub fn volume_id(uuid: &VolumeUuid, fs: &str, total: u64) -> VolumeId {
-    let uuid_hex = uuid_hex(uuid);
-    let total = total.to_string();
+/// `DiskHwId`: identidad del aparato físico. El serial manda; si falta, el
+/// `DiskUUID` del disco entero; si tampoco hay, vendor/model + capacidad.
+/// Nunca usa `disk2` ni el punto de montaje.
+pub fn disk_hw_id(
+    serial: Option<&str>,
+    vendor_model: &str,
+    capacity: u64,
+    disk_guid: Option<&str>,
+) -> Option<String> {
+    let serial = serial.unwrap_or("").trim().to_ascii_lowercase();
+    let guid = disk_guid.unwrap_or("").trim().to_ascii_lowercase();
+    let vm = vendor_model.trim().to_ascii_lowercase();
+    if serial.is_empty() && guid.is_empty() && vm.is_empty() {
+        return None;
+    }
+    let cap = capacity.to_string();
     let h = fnv1a64(&[
-        uuid_hex.as_bytes(),
+        serial.as_bytes(),
         &[0],
-        fs.as_bytes(),
+        vm.as_bytes(),
         &[0],
-        total.as_bytes(),
+        cap.as_bytes(),
+        &[0],
+        guid.as_bytes(),
     ]);
-    Arc::from(format!("{h:016x}").as_str())
+    Some(format!("disk:{h:016x}"))
+}
+
+/// `volume_id` = hash(DiskHwId || offset_particion || fs_uuid). El mismo disco
+/// en `/Volumes/Backup` o en `/Volumes/Backup 1` da el mismo id.
+pub fn volume_identity(disk_hw: &str, partition_offset: u64, fs_uuid: &str) -> VolumeId {
+    let off = partition_offset.to_string();
+    let h = fnv1a64(&[
+        disk_hw.as_bytes(),
+        &[0],
+        off.as_bytes(),
+        &[0],
+        fs_uuid.as_bytes(),
+    ]);
+    Arc::from(format!("vol:{h:016x}").as_str())
 }
 
 /// Raíz suelta que no es un volumen montado.
@@ -416,13 +473,36 @@ mod tests {
     }
 
     #[test]
-    fn volume_id_is_stable_hex() {
-        let a = volume_id(&[1; 16], "apfs", 1000);
-        let b = volume_id(&[1; 16], "apfs", 1000);
+    fn volume_id_is_stable_and_not_the_letter() {
+        let hw = disk_hw_id(Some("SN-1"), "Disk", 1000, None).unwrap();
+        let a = volume_identity(&hw, 0, "fs-1");
+        let b = volume_identity(&hw, 0, "fs-1");
         assert_eq!(a, b);
-        assert_eq!(a.len(), 16);
-        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
-        assert_ne!(a, volume_id(&[1; 16], "apfs", 1001));
+        assert!(a.starts_with("vol:"));
+        assert!(a[4..].chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(a, volume_identity(&hw, 0, "fs-2"));
+    }
+
+    #[test]
+    fn volume_identity_does_not_use_mount() {
+        let hw = disk_hw_id(Some("SERIAL1"), "Seagate Backup", 4_000_000, None).unwrap();
+        let a = volume_identity(&hw, 0, "uuid-a");
+        let b = volume_identity(&hw, 0, "uuid-a");
+        assert_eq!(a, b);
+        // Otro disco con el mismo nombre montado en la misma ruta: distinto id.
+        let hw2 = disk_hw_id(Some("SERIAL2"), "Seagate Backup", 4_000_000, None).unwrap();
+        assert_ne!(a, volume_identity(&hw2, 0, "uuid-a"));
+        // Otra partición del mismo disco: distinto offset.
+        assert_ne!(a, volume_identity(&hw, 1_000_000, "uuid-a"));
+    }
+
+    #[test]
+    fn disk_hw_id_prefers_serial_but_accepts_guid() {
+        let by_serial = disk_hw_id(Some("ABC"), "NVMe", 1000, None).unwrap();
+        let by_guid = disk_hw_id(None, "NVMe", 1000, Some("GUID-1")).unwrap();
+        assert_ne!(by_serial, by_guid);
+        assert!(by_serial.starts_with("disk:"));
+        assert!(disk_hw_id(None, "", 0, None).is_none());
     }
 
     #[test]

@@ -16,11 +16,7 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + S
 /// Contrato de fuente de nodos: emite lotes, nunca un `Vec` de todo.
 pub trait Fuente {
     fn nombre(&self) -> &'static str;
-    fn escanear(
-        &self,
-        raiz: &Path,
-        emit: &mut dyn FnMut(&[Entrada]) -> Result<()>,
-    ) -> Result<()>;
+    fn escanear(&self, raiz: &Path, emit: &mut dyn FnMut(&[Entrada]) -> Result<()>) -> Result<()>;
 }
 
 /// Recorrido paralelo simple, portable. No sigue symlinks y no cruza puntos
@@ -48,11 +44,7 @@ impl Fuente for WalkFuente {
         "walk"
     }
 
-    fn escanear(
-        &self,
-        raiz: &Path,
-        emit: &mut dyn FnMut(&[Entrada]) -> Result<()>,
-    ) -> Result<()> {
+    fn escanear(&self, raiz: &Path, emit: &mut dyn FnMut(&[Entrada]) -> Result<()>) -> Result<()> {
         let raiz = raiz.to_path_buf();
         let meta = fs::symlink_metadata(&raiz)?;
         let root_id = file_id(&self.volume_id, &meta, &raiz, 0);
@@ -63,7 +55,7 @@ impl Fuente for WalkFuente {
         cola.push_back((raiz, root_id));
         let mut lote: Vec<Entrada> = Vec::with_capacity(512);
         while let Some((dir, dir_id)) = cola.pop_front() {
-            if self.excludes.iter().any(|e| dir == *e) {
+            if self.excludes.contains(&dir) {
                 continue;
             }
             let rd = match fs::read_dir(&dir) {
@@ -104,10 +96,8 @@ fn is_mount(path: &Path) -> bool {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        if let (Ok(p), Ok(parent)) = (fs::metadata(path), path.parent().map(fs::metadata)) {
-            if let Ok(parent) = parent {
-                return p.dev() != parent.dev();
-            }
+        if let (Ok(p), Some(Ok(parent))) = (fs::metadata(path), path.parent().map(fs::metadata)) {
+            return p.dev() != parent.dev();
         }
     }
     let _ = path;
@@ -115,18 +105,15 @@ fn is_mount(path: &Path) -> bool {
 }
 
 fn file_id(volume: &VolumeId, meta: &fs::Metadata, path: &Path, gen: u32) -> FileId {
+    let _ = path;
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        FileId::new(
-            volume.clone(),
-            meta.ino(),
-            gen,
-            btime_ns(meta),
-        )
+        FileId::new(volume.clone(), meta.ino(), gen, btime_ns(meta))
     }
     #[cfg(not(unix))]
     {
+        let _ = gen;
         let mut h = crate::types::fnv1a64(&[path.to_string_lossy().as_bytes()]);
         h ^= meta.len();
         FileId::new(volume.clone(), h, 0, 0)
@@ -135,9 +122,9 @@ fn file_id(volume: &VolumeId, meta: &fs::Metadata, path: &Path, gen: u32) -> Fil
 
 #[cfg(unix)]
 fn btime_ns(meta: &fs::Metadata) -> i64 {
-    use std::os::unix::fs::MetadataExt;
     #[cfg(target_os = "macos")]
     {
+        use std::os::macos::fs::MetadataExt;
         meta.st_birthtime()
             .saturating_mul(1_000_000_000)
             .saturating_add(meta.st_birthtime_nsec())
@@ -179,12 +166,14 @@ fn entrada(path: &Path, meta: &fs::Metadata, id: FileId, parent: FileId, name: V
         }
     };
     let _ = (ino, gen);
-    let mut dev_id = id.key.ino;
+    #[allow(unused_mut)]
     #[cfg(unix)]
-    {
+    let dev_id = {
         use std::os::unix::fs::MetadataExt;
-        dev_id = meta.dev();
-    }
+        meta.dev()
+    };
+    #[cfg(not(unix))]
+    let dev_id = id.key.ino;
     let encoding = match std::str::from_utf8(&name) {
         Ok(_) => Encoding::Utf8,
         Err(_) => Encoding::Other,
@@ -217,6 +206,11 @@ pub fn synthetic_volume(path: &Path, host: &str) -> crate::types::Volume {
         .unwrap_or((0, 0));
     crate::types::Volume {
         id,
+        disk_hw_id: None,
+        disk_guid: None,
+        serial: None,
+        partition_offset: 0,
+        identity_state: crate::types::IdentityState::SinIdentidad,
         cloud_id: None,
         possible_duplicate: false,
         uuid: [0; 16],
@@ -240,5 +234,5 @@ pub fn synthetic_volume(path: &Path, host: &str) -> crate::types::Volume {
 }
 
 pub fn io_err(msg: impl Into<String>) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, msg.into())
+    io::Error::other(msg.into())
 }

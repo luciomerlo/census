@@ -7,9 +7,10 @@
 
 use std::collections::{HashMap, HashSet};
 
+pub use crate::types::Stats;
 use crate::types::{
-    fnv1a64, Entrada, FileId, FileKey, Kind, Marca, Provenance, Stats, Volume, FLAG_DIR,
-    FLAG_HARDLINK, FLAG_HIDDEN, FLAG_ROOT, FLAG_SYMLINK,
+    fnv1a64, Entrada, FileId, FileKey, Kind, Marca, Provenance, Volume, FLAG_DIR, FLAG_HARDLINK,
+    FLAG_HIDDEN, FLAG_ROOT, FLAG_SYMLINK,
 };
 
 /// 12 bytes por nodo para escanear por nombre.
@@ -185,7 +186,7 @@ impl Index {
     /// (`/Volumes/USB` antes que `/`) y tolera mayúsculas distintas.
     pub fn find_dir(&self, path: &str) -> Option<u32> {
         let path = normalize_dir(path);
-        let mut best: Option<(usize, u32, &str)> = None;
+        let mut best: Option<(usize, u32)> = None;
         for &root in &self.roots {
             let mount = self.path_of(root);
             let m = normalize_dir(&mount);
@@ -196,12 +197,12 @@ impl Index {
             };
             if matches {
                 let len = m.len();
-                if best.as_ref().map_or(true, |(l, _, _)| len > *l) {
-                    best = Some((len, root, mount.as_str()));
+                if best.is_none_or(|(l, _)| len > l) {
+                    best = Some((len, root));
                 }
             }
         }
-        let (_, root, _) = best?;
+        let (_, root) = best?;
         if path == normalize_dir(&self.path_of(root)) {
             return Some(root);
         }
@@ -230,12 +231,10 @@ impl Index {
         }
         // macOS es case-insensitive por defecto en APFS/HFS+: segundo intento.
         let folded = crate::query::fold_bytes(name);
-        for &c in children {
-            if self.folded_name(c) == folded.as_slice() {
-                return Some(c);
-            }
-        }
-        None
+        children
+            .iter()
+            .find(|&&c| self.folded_name(c) == folded.as_slice())
+            .copied()
     }
 }
 
@@ -297,10 +296,6 @@ impl Builder {
             return;
         }
         let key = e.id.key();
-        if self.por_clave.contains_key(&key) {
-            self.skipped += 1;
-            return;
-        }
         let parent_key = e.parent_id.key();
         let is_root = parent_key == key;
         let parent = if is_root {
@@ -350,14 +345,17 @@ impl Builder {
             self.nodes[id as usize].parent = id;
             self.roots.push(id);
         }
-        self.por_clave.insert(key, id);
+        // Un hardlink tiene el mismo FileKey y otra ruta: se conserva como
+        // nodo propio para poder encontrarlo por los dos nombres. El tamaño
+        // se cuenta una vez en `dir_bytes`.
+        self.por_clave.entry(key).or_insert(id);
         if flags & FLAG_DIR != 0 {
             self.stats.dirs += 1;
         } else {
             self.stats.files += 1;
         }
         self.stats.records += 1;
-        if self.stats.records % 1_000_000 == 0 {
+        if self.stats.records.is_multiple_of(1_000_000) {
             eprintln!("  {} nodos...", self.stats.records);
         }
     }
@@ -416,7 +414,7 @@ impl Builder {
                         vol,
                         nlink: e.nlink,
                     });
-                    self.por_clave.insert(key, id);
+                    self.por_clave.entry(key).or_insert(id);
                     if flags & FLAG_DIR != 0 {
                         self.stats.dirs += 1;
                     } else {
@@ -446,7 +444,7 @@ impl Builder {
         for i in 0..n {
             counts[i + 1] += counts[i];
         }
-        let mut hijos_inicio = counts.clone();
+        let hijos_inicio = counts.clone();
         let mut hijos = vec![0u32; n];
         let mut cursor = counts;
         for (id, node) in self.nodes.iter().enumerate() {
@@ -556,7 +554,7 @@ impl Builder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{dir_volume_id, volume_id, Encoding, Volume};
+    use crate::types::{dir_volume_id, Encoding, Volume};
 
     fn vol(id: &str) -> Volume {
         Volume {
@@ -570,7 +568,7 @@ mod tests {
         }
     }
 
-    fn ent(id: &str, parent: &str, ino: u64, name: &str, dir: bool, size: u64) -> Entrada {
+    fn ent(_id: &str, parent: &str, ino: u64, name: &str, dir: bool, size: u64) -> Entrada {
         let v = dir_volume_id("test", "/");
         Entrada {
             id: FileId::new(v.clone(), ino, 0, 1000 + ino as i64),
@@ -626,7 +624,12 @@ mod tests {
         d2.parent_id = FileId::new(dir_volume_id("test", "/"), 3, 0, 0);
         d2.nlink = 2;
         b.push_batch(&[d1, d2]);
-        b.finish(1_700_000_000, 1, Marca("m1:test:1".into()), Provenance::default())
+        b.finish(
+            1_700_000_000,
+            1,
+            Marca("m1:test:1".into()),
+            Provenance::default(),
+        )
     }
 
     #[test]
@@ -655,7 +658,10 @@ mod tests {
         assert_eq!(ix.compacto.len(), ix.nodes.len());
         let id = ix.find_dir("/Users/Lucio").unwrap();
         let c = ix.compacto[id as usize];
-        assert_eq!(&ix.folded[c.off as usize..c.off as usize + c.len as usize], b"lucio");
+        assert_eq!(
+            &ix.folded[c.off as usize..c.off as usize + c.len as usize],
+            b"lucio"
+        );
     }
 
     #[test]
@@ -665,7 +671,7 @@ mod tests {
         let root = ix.roots[0];
         assert!(ix.is_under(root, users));
         assert!(!ix.is_under(users, root));
-        assert_eq!(ix.tout[users as usize] - ix.tin[users as usize], 5);
+        assert_eq!(ix.tout[users as usize] - ix.tin[users as usize], 6);
     }
 
     #[test]

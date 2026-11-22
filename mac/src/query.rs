@@ -5,8 +5,9 @@
 //! se usa `to_lowercase()` de Unicode. En nombres que no son UTF-8 se pliega
 //! sólo ASCII.
 
-use crate::index::{Index, FLAG_DIR};
+use crate::index::Index;
 use crate::time;
+use crate::types::FLAG_DIR;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Sort {
@@ -79,9 +80,7 @@ pub struct Query {
 pub fn fold_char(c: char) -> char {
     match c {
         'A'..='Z' => char::from_u32(c as u32 + 32).unwrap_or(c),
-        '\u{00C0}'..='\u{00DE}' if c != '\u{00D7}' => {
-            char::from_u32(c as u32 + 32).unwrap_or(c)
-        }
+        '\u{00C0}'..='\u{00DE}' if c != '\u{00D7}' => char::from_u32(c as u32 + 32).unwrap_or(c),
         _ => c,
     }
 }
@@ -449,10 +448,7 @@ impl Index {
     fn compare(&self, sort: Sort, a: u32, b: u32) -> std::cmp::Ordering {
         match sort {
             Sort::NameAsc => self.folded_name(a).cmp(self.folded_name(b)).then(a.cmp(&b)),
-            Sort::NameDesc => self
-                .folded_name(b)
-                .cmp(self.folded_name(a))
-                .then(b.cmp(&a)),
+            Sort::NameDesc => self.folded_name(b).cmp(self.folded_name(a)).then(b.cmp(&a)),
             Sort::PathAsc => self.path_of(a).cmp(&self.path_of(b)),
             Sort::PathDesc => self.path_of(b).cmp(&self.path_of(a)),
             Sort::SizeAsc => self.nodes[a as usize]
@@ -487,7 +483,9 @@ mod tests {
         assert_eq!(fold_str("×"), "×".as_bytes());
         // No se quitan acentos ni se tocan ligaduras.
         assert_eq!(fold_str("café"), "café".as_bytes());
-        assert_eq!(fold_str("Æ"), "Æ".as_bytes());
+        assert_eq!(fold_str("Æ"), "æ".as_bytes());
+        // La tabla pliega la caja de Æ, pero no la expande a "ae".
+        assert_ne!(fold_str("Æ"), b"ae");
     }
 
     #[test]

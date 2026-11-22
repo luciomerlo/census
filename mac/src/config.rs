@@ -81,6 +81,17 @@ pub struct OfflinePick {
     pub volume_id: String,
 }
 
+/// Montaje que la heurística no puede atribuir (rclone, FUSE propio).
+/// `path_prefix` es sólo detección local; la identidad sigue siendo
+/// `provider/account/unit`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CloudAlias {
+    pub path_prefix: String,
+    pub provider: String,
+    pub account: String,
+    pub unit: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default = "d_port")]
@@ -110,6 +121,9 @@ pub struct Config {
     pub volumes_enabled: Vec<String>,
     #[serde(default)]
     pub clouds_enabled: Vec<String>,
+    /// Alias manuales para montajes de nube sin cuenta/unidad en la ruta.
+    #[serde(default)]
+    pub cloud_aliases: Vec<CloudAlias>,
     #[serde(default)]
     pub offline_selection: Vec<OfflinePick>,
     #[serde(default)]
@@ -141,6 +155,7 @@ impl Default for Config {
             cloud_roots: default_cloud_roots(),
             volumes_enabled: Vec::new(),
             clouds_enabled: Vec::new(),
+            cloud_aliases: Vec::new(),
             offline_selection: Vec::new(),
             overrides: Vec::new(),
             jobs: 0,
@@ -210,6 +225,7 @@ impl Config {
             if !self.clouds_enabled.is_empty() {
                 return self.clouds_enabled.iter().any(|v| v == cloud);
             }
+            return true;
         }
         if !self.volumes_enabled.is_empty() {
             return self.volumes_enabled.iter().any(|v| v == volume_id);
@@ -270,6 +286,7 @@ fn home() -> PathBuf {
 
 /// En macOS, `~/Library/Application Support/Census`. En otros sistemas,
 /// equivalente XDG para poder correr los tests en Windows.
+#[allow(unreachable_code)]
 pub fn data_dir() -> PathBuf {
     if let Ok(d) = std::env::var("CENSUS_DATA_DIR") {
         return PathBuf::from(d);
@@ -292,6 +309,7 @@ pub fn data_dir() -> PathBuf {
     home().join(".local/share/census")
 }
 
+#[allow(unreachable_code)]
 pub fn config_dir() -> PathBuf {
     if let Ok(d) = std::env::var("CENSUS_CONFIG_DIR") {
         return PathBuf::from(d);
@@ -391,8 +409,7 @@ pub fn write_json<T: Serialize>(path: &std::path::Path, value: &T) -> Result<(),
     let mut tmp = path.to_path_buf();
     tmp.set_extension("json.tmp");
     {
-        let mut f =
-            fs::File::create(&tmp).map_err(|e| format!("crear {}: {e}", tmp.display()))?;
+        let mut f = fs::File::create(&tmp).map_err(|e| format!("crear {}: {e}", tmp.display()))?;
         f.write_all(text.as_bytes())
             .map_err(|e| format!("escribir {}: {e}", tmp.display()))?;
         f.write_all(b"\n").ok();
@@ -420,7 +437,13 @@ pub fn pc_id() -> String {
             return s;
         }
     }
-    let mut seed = format!("{}:{}:{}", hostname(), std::process::id(), crate::time::now_ns());
+    #[allow(unused_mut)]
+    let mut seed = format!(
+        "{}:{}:{}",
+        hostname(),
+        std::process::id(),
+        crate::time::now_ns()
+    );
     #[cfg(target_os = "macos")]
     {
         if let Some(uuid) = crate::volumes::platform_uuid() {
@@ -438,6 +461,7 @@ pub fn pc_id() -> String {
 
 fn generate_token() -> String {
     let mut bytes = [0u8; 16];
+    #[allow(unused_mut)]
     let mut ok = false;
     #[cfg(unix)]
     {
@@ -480,8 +504,10 @@ mod tests {
 
     #[test]
     fn manual_override_wins() {
-        let mut c = Config::default();
-        c.volumes_enabled = vec!["vol1".into()];
+        let mut c = Config {
+            volumes_enabled: vec!["vol1".into()],
+            ..Default::default()
+        };
         assert!(c.volume_enabled("vol1", None));
         assert!(!c.volume_enabled("vol2", None));
         c.set_override(Override {

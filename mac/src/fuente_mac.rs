@@ -12,7 +12,9 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::ffi::CString;
+use std::os::macos::fs::MetadataExt as _;
 use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -81,11 +83,7 @@ impl Fuente for FuenteMac {
         "getattrlistbulk"
     }
 
-    fn escanear(
-        &self,
-        raiz: &Path,
-        emit: &mut dyn FnMut(&[Entrada]) -> Result<()>,
-    ) -> Result<()> {
+    fn escanear(&self, raiz: &Path, emit: &mut dyn FnMut(&[Entrada]) -> Result<()>) -> Result<()> {
         let root_meta = std::fs::symlink_metadata(raiz)?;
         let root_id = meta_id(&self.volume_id, &root_meta);
         let root = Entrada {
@@ -128,16 +126,7 @@ impl Fuente for FuenteMac {
             let volumes = self.volumes.clone();
             let skip_mounts = self.skip_mounts;
             handles.push(std::thread::spawn(move || {
-                worker(
-                    estado,
-                    tx,
-                    errores,
-                    nodos,
-                    stop,
-                    excl,
-                    volumes,
-                    skip_mounts,
-                );
+                worker(estado, tx, errores, nodos, stop, excl, volumes, skip_mounts);
             }));
         }
         drop(tx);
@@ -163,6 +152,7 @@ impl Fuente for FuenteMac {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn worker(
     estado: Arc<(Mutex<Estado>, Condvar)>,
     tx: std::sync::mpsc::Sender<Vec<Entrada>>,
@@ -301,12 +291,12 @@ fn leer_dir(
             };
             e.parent_id = dir_id.clone();
             let child_path = dir.join(std::ffi::OsStr::from_bytes(&e.name));
-            if excludes.iter().any(|x| child_path == *x) {
+            if excludes.contains(&child_path) {
                 continue;
             }
             let es_dir = e.kind == Kind::Dir;
             if es_dir && es_montaje {
-                e.flags |= FLAG_MOUNT;
+                e.flags |= FLAG_MOUNT as u32;
             }
             let child_id = e.id.clone();
             lote.push(e);
@@ -496,7 +486,6 @@ fn read_i64(b: &[u8]) -> i64 {
 }
 
 fn meta_id(volume: &VolumeId, meta: &std::fs::Metadata) -> FileId {
-    use std::os::unix::fs::MetadataExt;
     let btime = meta
         .st_birthtime()
         .saturating_mul(1_000_000_000)
@@ -505,14 +494,12 @@ fn meta_id(volume: &VolumeId, meta: &std::fs::Metadata) -> FileId {
 }
 
 fn meta_mtime(meta: &std::fs::Metadata) -> i64 {
-    use std::os::unix::fs::MetadataExt;
     meta.mtime()
         .saturating_mul(1_000_000_000)
         .saturating_add(meta.mtime_nsec())
 }
 
 fn meta_btime(meta: &std::fs::Metadata) -> i64 {
-    use std::os::unix::fs::MetadataExt;
     meta.st_birthtime()
         .saturating_mul(1_000_000_000)
         .saturating_add(meta.st_birthtime_nsec())

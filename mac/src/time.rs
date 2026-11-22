@@ -30,6 +30,7 @@ pub fn from_secs(s: i64) -> i64 {
     s.saturating_mul(NS)
 }
 
+#[allow(dead_code)]
 fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
     let era = if y >= 0 { y } else { y - 399 } / 400;
@@ -114,7 +115,7 @@ mod local {
     }
 
     pub fn parse_local(y: i64, mo: u32, d: u32, h: u32, mi: u32, se: u32) -> Option<i64> {
-        let mut tm = MaybeUninit::<libc::tm>::zeroed();
+        let tm = MaybeUninit::<libc::tm>::zeroed();
         let mut tm = unsafe { tm.assume_init() };
         tm.tm_year = (y - 1900) as libc::c_int;
         tm.tm_mon = (mo as i32 - 1) as libc::c_int;
@@ -147,7 +148,9 @@ mod local {
 
     pub fn parse_local(y: i64, mo: u32, d: u32, h: u32, mi: u32, se: u32) -> Option<i64> {
         let days = days_from_civil(y, mo, d);
-        Some(from_secs(days * 86_400 + h as i64 * 3600 + mi as i64 * 60 + se as i64))
+        Some(from_secs(
+            days * 86_400 + h as i64 * 3600 + mi as i64 * 60 + se as i64,
+        ))
     }
 }
 

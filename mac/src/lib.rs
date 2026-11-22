@@ -9,25 +9,15 @@
 //!
 //! Regla de producto: indexar y consultar es **read-only**. No se borra nada.
 
-pub mod api;
-pub mod atlas;
 pub mod config;
 pub mod fmt;
 pub mod fuente_mac;
 pub mod index;
-pub mod manifest;
-pub mod mcp;
-pub mod mirrors;
 pub mod query;
-pub mod scan;
-pub mod snapshot;
-pub mod tailscale;
+pub mod source;
 pub mod time;
 pub mod types;
-pub mod vigilante_mac;
 pub mod volumes;
-pub mod watch;
-pub mod wcat;
 
 pub use index::{Compacto, Index, Node, Stats};
 pub use query::{Query, Sort};
