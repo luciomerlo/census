@@ -1,4 +1,31 @@
-# Pendientes — 2026-11-22
+# Pendientes — 2026-11-22 (actualizado tras mmap + ARM + contrato MINIMO)
+
+## Hecho en esta tanda
+- `f6f0c06` snapshot v4 con secciones alineadas 8 B + arenas por mmap
+  (`src/mmap.rs`, memmap2): **carga 197 → 155 ms**, `names`/`folded` sin copiar.
+  `CENSUS_MMAP=0` fuerza el camino de copia. v3 se sigue leyendo.
+- `f6f0c06` `DiskHwId`/`volume_id`/`cloud_id` en `topology.rs`/`volumes.rs`:
+  serial+vendor+modelo+capacidad, `serial_ambiguo`, `sin_identidad`, parseo de
+  etiqueta de Google Drive. `census drives` ya muestra la topología real.
+- `0a9265e` `src/atlas.rs`: overrides (excluir/incluir/unir/separar) y selección
+  offline tildada, con 8 tests. Falta el subcomando CLI.
+- `3a2de0b` CI ARM64 nativo (job `arm64` en `ci.yml`) + `tools/build-arm64.ps1`.
+- `docs/MINIMO.md` (`e546c8c`, `8e98631`): contrato v1 de 5 comandos + 6
+  endpoints HTTP, aceptado por los tres chats.
+- 154 tests verdes, clippy `-D warnings` en 0.
+
+## Pendiente inmediato
+- **`volumes --json` y `census atlas ...`**: el subagente había reescrito
+  `main.rs` y la CLI quedaba colgada; se volvió a HEAD. Hay que re-agregar sólo
+  los subcomandos, sin tocar el parseo existente (copia de la versión del
+  subagente en `/tmp/main_delegate.rs`).
+- **`serve --http`**: 6 endpoints `/v1/*` de MINIMO. En Windows no existe HTTP
+  hoy (sólo named pipe).
+- **Cross-build ARM64 local falla**: falta "MSVC v143 - ARM64 build tools"
+  (`link.exe` sin operandos). El CI usa runner nativo `windows-11-arm`.
+- **`DiskHwId` sin elevación** devuelve "modelo desconocido": probar elevado y
+  verificar `serial`; si el driver NVMe exige `GENERIC_READ`, documentarlo.
+
 
 Estado al cerrar la ronda de coordinación entre los chats de Census (Windows,
 Mac, Linux). Último commit en master: `deb764d`.
