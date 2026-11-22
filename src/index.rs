@@ -63,6 +63,11 @@ pub struct Index {
     pub euler: Vec<u32>,
     pub tin: Vec<u32>,
     pub tout: Vec<u32>,
+    /// `true` si `nodes` está ordenado por FRN (lo está cuando viene de la MFT).
+    pub frn_sorted: bool,
+    /// Cambios aplicados desde el snapshot (USN Journal, C2). Fuera del
+    /// snapshot a propósito: se rehace desde el watermark al arrancar.
+    pub overlay: crate::overlay::Overlay,
 }
 
 pub struct Builder {
@@ -182,6 +187,8 @@ impl Builder {
             euler: Vec::new(),
             tin: Vec::new(),
             tout: Vec::new(),
+            frn_sorted: false,
+            overlay: crate::overlay::Overlay::default(),
         };
         ix.compute_dir_bytes();
         ix.compute_folded();
@@ -204,6 +211,10 @@ impl Index {
     /// Nombre en UTF-16. Un id fuera de rango o un offset corrupto devuelven
     /// vacío en vez de paniquear: el índice también se carga de disco.
     pub fn name_utf16(&self, id: u32) -> &[u16] {
+        // Los ids sintéticos del overlay no están en `nodes`.
+        if let Some(e) = self.overlay.extra(self, id) {
+            return &e.nombre;
+        }
         let Some(n) = self.nodes.get(id as usize) else {
             return &[];
         };
@@ -214,6 +225,9 @@ impl Index {
 
     /// Nombre plegado (minúsculas, sin acentos) para comparar rápido.
     pub fn name_folded(&self, id: u32) -> &[u16] {
+        if let Some(e) = self.overlay.extra(self, id) {
+            return &e.plegado;
+        }
         let Some(n) = self.nodes.get(id as usize) else {
             return &[];
         };
@@ -232,6 +246,9 @@ impl Index {
     }
 
     pub fn is_dir(&self, id: u32) -> bool {
+        if let Some(e) = self.overlay.extra(self, id) {
+            return e.carpeta;
+        }
         self.nodes
             .get(id as usize)
             .is_some_and(|n| n.flags & F_DIR != 0)
@@ -246,6 +263,31 @@ impl Index {
     /// Padre de un nodo, si el id existe.
     pub fn parent(&self, id: u32) -> Option<u32> {
         self.nodes.get(id as usize).map(|n| n.parent)
+    }
+
+    /// Busca un nodo por su FRN. Aprovecha que la MFT llega ordenada; si el
+    /// índice se armó por recorrido (sin elevación) no lo está y se busca a
+    /// mano. Lo usan los cambios del journal, que vienen por FRN.
+    pub fn find_by_frn(&self, frn: u64) -> Option<u32> {
+        if frn == 0 {
+            return None;
+        }
+        if self.frn_sorted {
+            return self
+                .nodes
+                .binary_search_by_key(&frn, |n| n.frn)
+                .ok()
+                .map(|p| p as u32);
+        }
+        self.nodes
+            .iter()
+            .position(|n| n.frn == frn)
+            .map(|p| p as u32)
+    }
+
+    /// Ruta completa de la carpeta con ese FRN, si está en el índice.
+    pub fn path_of_frn(&self, frn: u64) -> Option<String> {
+        self.find_by_frn(frn).map(|id| self.full_path(id))
     }
 
     /// Carpeta contenedora. Vacía para la raíz y para ids inválidos.
@@ -274,6 +316,9 @@ impl Index {
 
     /// Ruta completa.
     pub fn full_path(&self, id: u32) -> String {
+        if let Some(e) = self.overlay.extra(self, id) {
+            return self.overlay.ruta(self, e);
+        }
         if self.is_drive(id) {
             return self.name_string(id);
         }
@@ -378,6 +423,8 @@ impl Index {
             euler: Vec::new(),
             tin: Vec::new(),
             tout: Vec::new(),
+            frn_sorted: false,
+            overlay: crate::overlay::Overlay::default(),
         };
         ix.compute_dir_bytes();
         ix.compute_folded();

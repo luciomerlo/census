@@ -7,6 +7,7 @@ pub mod gui;
 pub mod index;
 mod indexes;
 pub mod mcp;
+pub mod overlay;
 pub mod query;
 pub mod service;
 pub mod snapshot;

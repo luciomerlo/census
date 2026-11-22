@@ -14,6 +14,7 @@ impl Index {
     /// Recalcula hijos y orden por nombre. Se llama al construir o cargar el
     /// índice; es la única parte que cuesta (un `sort` de 1,2 M de ids).
     pub fn rebuild_indexes(&mut self) {
+        self.frn_sorted = self.nodes.windows(2).all(|w| w[0].frn <= w[1].frn);
         self.build_children();
         self.build_euler();
         self.build_name_order();

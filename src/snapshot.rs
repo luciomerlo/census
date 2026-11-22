@@ -762,6 +762,8 @@ pub fn load(path: &Path) -> Result<Index, LoadError> {
         euler,
         tin: Vec::new(),
         tout: Vec::new(),
+        frn_sorted: false,
+        overlay: crate::overlay::Overlay::default(),
     };
     // Si el snapshot trae todo, sólo se reconstruye lo barato (rango y
     // tin/tout). Si no (v2 con bloques vacíos), se calcula como siempre.

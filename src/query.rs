@@ -429,6 +429,87 @@ impl Index {
         true
     }
 
+    /// ¿Un extra del overlay pasa los filtros de la consulta?
+    ///
+    /// Los registros del journal no traen tamaño ni fecha, así que las
+    /// consultas que los piden no consideran el overlay: mejor no mostrar que
+    /// mostrar con datos inventados.
+    fn extra_pasa_filtros(&self, q: &Query, e: &crate::overlay::Extra) -> bool {
+        if q.min_mtime.is_some()
+            || q.max_mtime.is_some()
+            || q.size.is_some()
+            || q.dir.is_some()
+            || q.nonexistent_dir.is_some()
+        {
+            return false;
+        }
+        if q.files_only && e.carpeta {
+            return false;
+        }
+        if q.folders_only && !e.carpeta {
+            return false;
+        }
+        if !q.exts.is_empty() {
+            let nombre = &e.plegado;
+            let Some(dot) = nombre.iter().rposition(|u| *u == '.' as u16) else {
+                return false;
+            };
+            if dot + 1 >= nombre.len() || !q.exts.iter().any(|x| x == &nombre[dot + 1..]) {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Extras que coinciden por **nombre** con todos los términos.
+    fn extras_por_nombre(&self, q: &Query) -> Vec<u32> {
+        let mut out = Vec::new();
+        if self.overlay.is_empty() || q.terms.is_empty() {
+            return out;
+        }
+        for id in self.overlay.ids(self) {
+            let Some(e) = self.overlay.extra(self, id) else {
+                continue;
+            };
+            if !self.extra_pasa_filtros(q, e) {
+                continue;
+            }
+            if q.terms.iter().all(|t| contains_folded(&e.plegado, t)) {
+                out.push(id);
+            }
+        }
+        out
+    }
+
+    /// Extras que sólo coinciden porque el término está en alguna carpeta de
+    /// la ruta (la segunda fase, para un archivo recién creado).
+    fn extras_por_ruta(&self, q: &Query) -> Vec<u32> {
+        let mut out = Vec::new();
+        if self.overlay.is_empty() || q.terms.is_empty() {
+            return out;
+        }
+        for id in self.overlay.ids(self) {
+            let Some(e) = self.overlay.extra(self, id) else {
+                continue;
+            };
+            if !self.extra_pasa_filtros(q, e)
+                || q.terms.iter().all(|t| contains_folded(&e.plegado, t))
+            {
+                continue;
+            }
+            let ruta: Vec<u16> = self
+                .overlay
+                .ruta(self, e)
+                .encode_utf16()
+                .map(fold)
+                .collect();
+            if q.terms.iter().all(|t| contains_folded(&ruta, t)) {
+                out.push(id);
+            }
+        }
+        out
+    }
+
     /// ¿Todos los términos aparecen en el nombre? Compara sobre el arena
     /// plegado: no hay `fold()` en tiempo de consulta.
     fn name_has_all(&self, q: &Query, id: u32) -> bool {
@@ -517,6 +598,12 @@ impl Index {
     /// paralelo y comparan sobre el arena plegado.
     pub fn match_ids_split(&self, q: &Query, cap: usize) -> (Vec<u32>, usize) {
         let mut ids = self.scan(|id| self.passes_filters(q, id) && self.name_has_all(q, id));
+        // Un archivo que el journal vio borrar ya no existe aunque siga en la
+        // foto, y uno recién creado no está en la foto todavía.
+        if !self.overlay.is_empty() {
+            ids.retain(|&id| !self.overlay.id_borrado(self, id));
+        }
+        ids.extend(self.extras_por_nombre(q));
         let cuantos = ids.len();
         if ids.len() < cap && !q.terms.is_empty() {
             // Fase 2: buscar el término en las carpetas. En vez de recorrer
@@ -536,7 +623,10 @@ impl Index {
             candidatos.sort_unstable();
             candidatos.dedup();
             for id in candidatos {
-                if !self.passes_filters(q, id) || self.name_has_all(q, id) {
+                if !self.passes_filters(q, id)
+                    || self.name_has_all(q, id)
+                    || self.overlay.id_borrado(self, id)
+                {
                     continue;
                 }
                 if self.all_terms_match(q, id) {
@@ -546,6 +636,9 @@ impl Index {
                     }
                 }
             }
+        }
+        if ids.len() < cap {
+            ids.extend(self.extras_por_ruta(q));
         }
         ids.truncate(cap);
         (ids, cuantos.min(cap))
