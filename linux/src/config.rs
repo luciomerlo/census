@@ -324,6 +324,7 @@ pub fn ensure_dirs() -> Result<(), String> {
 
 fn generate_id() -> String {
     let mut bytes = [0u8; 16];
+    #[allow(unused_mut)]
     let mut ok = false;
     #[cfg(unix)]
     {
@@ -360,7 +361,10 @@ mod tests {
 
     #[test]
     fn sanitize_peer_names() {
-        assert_eq!(sanitize("nb-lucio.tailnet.ts.net."), "nb-lucio.tailnet.ts.net.");
+        assert_eq!(
+            sanitize("nb-lucio.tailnet.ts.net."),
+            "nb-lucio.tailnet.ts.net."
+        );
         assert_eq!(sanitize("a/b c"), "a_b_c");
     }
 

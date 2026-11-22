@@ -4,3 +4,5 @@
 *.wcat
 bench.txt
 index.txt
+
+/linux/target/

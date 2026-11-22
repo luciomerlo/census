@@ -59,10 +59,21 @@ Mac, Linux). Último commit en master: `deb764d`.
 
 ## Linux (`c9725d6d`)
 
-- Avanzando en `linux/` (`plataforma.rs`, `volumes.rs`, `cloud.rs`, `scan.rs`).
-- Pendiente suyo: `l1:<generation>:<cambio_n>`, `btime` con `STATX_BTIME`,
-  `DiskHwId` por udev (`ID_SERIAL_SHORT`, `ID_WWN_WITH_EXTENSION`), listas de
-  red/nube, y números medidos de `getdents64` (referencia Windows: 335k/s).
+- `linux/` compila standalone (`[workspace]` propio) y tiene **35 tests verdes** en
+  Windows: contrato (`plataforma.rs`), índice de 64 B/arenas/preorden
+  (`index.rs`), `mountinfo`/tipos de volumen (`volumes.rs`), nube
+  (`cloud.rs`), configuración (`config.rs`) y primitivas de `DiskHwId`
+  (`diskid.rs`).
+- `diskid.rs` está escrito y probado, pero **falta integrarlo** en `Mount`,
+  `Root` y el snapshot: hoy `volume_id` sigue usando el hash viejo. Al
+  integrarlo hay que subir la versión de `.cns` (todavía no hay ningún archivo
+  guardado, así que es el momento).
+- Pendiente en [`linux/PENDIENTE.md`](linux/PENDIENTE.md): `scan.rs`
+  (`getdents64`+`statx`), `.cns`, consultas, catálogo multi-PC, Tailscale,
+  HTTP/MCP, `watch` y `main` completo.
+- Sin Linux en esta máquina (WSL pide reboot / `HCS_E_SERVICE_NOT_AVAILABLE`):
+  no hay números medidos de `getdents64` ni de carga de `.cns`. No se inventan;
+  referencia Windows 335k/s.
 
 ## Wiz (`c5eb0379`) y Sort (`c78e8f8c`)
 

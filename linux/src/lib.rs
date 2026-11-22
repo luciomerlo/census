@@ -15,12 +15,15 @@
 
 pub mod api;
 pub mod catalog;
+pub mod cloud;
 pub mod config;
+pub mod diskid;
 pub mod fmt;
 pub mod http;
 pub mod index;
 pub mod mcp;
 pub mod mirrors;
+pub mod plataforma;
 pub mod query;
 pub mod scan;
 pub mod snapshot;

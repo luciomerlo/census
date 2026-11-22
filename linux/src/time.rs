@@ -149,7 +149,9 @@ mod local {
 
     pub fn parse_local(y: i64, mo: u32, d: u32, h: u32, mi: u32, se: u32) -> Option<i64> {
         let days = days_from_civil(y, mo, d);
-        Some(from_secs(days * 86_400 + h as i64 * 3600 + mi as i64 * 60 + se as i64))
+        Some(from_secs(
+            days * 86_400 + h as i64 * 3600 + mi as i64 * 60 + se as i64,
+        ))
     }
 }
 

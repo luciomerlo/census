@@ -203,11 +203,7 @@ fn with_unknown(mut id: CloudId, mountpoint: &str) -> CloudId {
         hash(&id.provider, &id.account, &id.unit)
     } else {
         // Id local, distinto por camino: nunca fusiona dos desconocidos.
-        hash(
-            &id.provider,
-            &format!("desconocida:{mountpoint}"),
-            &id.unit,
-        )
+        hash(&id.provider, &format!("desconocida:{mountpoint}"), &id.unit)
     };
     id
 }
@@ -289,7 +285,7 @@ impl CloudId {
 fn identify_rclone(
     ctx: &CloudContext,
     source: &str,
-    mountpoint: &str,
+    _mountpoint: &str,
     super_opts: &str,
 ) -> Option<CloudId> {
     // `rclone mount remote:path /mnt` deja source `remote:path`; algunos
@@ -307,8 +303,8 @@ fn identify_rclone(
     let conf = ctx.rclone.get(remote).cloned().unwrap_or_default();
     let rtype = conf.get("type").cloned().unwrap_or_default();
     let provider = provider_for_rclone(&rtype);
-    let account = first(&conf, &["user", "email", "account", "username", "user_id"])
-        .unwrap_or_default();
+    let account =
+        first(&conf, &["user", "email", "account", "username", "user_id"]).unwrap_or_default();
     let unit = first(
         &conf,
         &[
@@ -480,14 +476,7 @@ mod tests {
             "",
         )
         .unwrap();
-        let rclone = identify(
-            &rclone_ctx(),
-            "fuse.rclone",
-            "gdrive:",
-            "/mnt/rclone",
-            "",
-        )
-        .unwrap();
+        let rclone = identify(&rclone_ctx(), "fuse.rclone", "gdrive:", "/mnt/rclone", "").unwrap();
         assert_eq!(gvfs.provider, "google-drive");
         assert_eq!(rclone.provider, "google-drive");
         assert_eq!(gvfs.account, "alice@gmail.com");

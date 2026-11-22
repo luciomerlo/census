@@ -2,13 +2,63 @@
 
 <img src="assets/icon.svg" width="128" align="right" alt="Census">
 
-Indexador de archivos para Windows: lee la MFT del volumen NTFS en bloque, una sola vez,
-y contesta consultas sobre millones de archivos en milisegundos. Expuesto con una API
+Indexador de archivos para Windows (y versiones macOS/Linux en desarrollo): lee la MFT
+del volumen NTFS en bloque, una sola vez, y contesta consultas sobre millones de
+archivos en milisegundos. Expuesto con una API
 mínima pensada para que otras apps (SortEverything, WizEverything) lo usen como base de
 datos, con un servidor MCP para que lo use una IA y con una ventana propia.
 
 Un censo enumera a todos los habitantes de un territorio; Census enumera a todos los
 archivos de tus unidades, y responde antes de que termines de escribir.
+
+## Cómo funciona en cada plataforma
+
+Census es el mismo modelo en las tres plataformas: un índice plano en RAM, nombres
+como bytes, consultas por subárbol y un snapshot binario que se puede compartir. Lo
+que cambia es **cómo se consigue la lista de archivos** y **cómo se identifica el
+disco**. Cada plataforma vive en su propio crate para no arrastrar dependencias que
+no compilan en las otras.
+
+| Plataforma | Carpeta | Cómo enumera | Identidad de disco | Snapshot | Estado |
+|---|---|---|---|---|---|
+| **Windows** | `src/` | MFT de NTFS (lectura en bloque); recorrido si no hay elevación o el FS no es NTFS | `DiskHwId` por `IOCTL_STORAGE_QUERY_PROPERTY` + GUID de volumen | `.wcat` | Motor, GUI, IPC y MCP funcionando y medidos |
+| **macOS** | `mac/` | `getattrlistbulk`; FSEvents para cambios | `DiskUUID` / `VolumeUUID` | `.cnx` | En desarrollo |
+| **Linux** | `linux/` | `getdents64` + `statx` en paralelo; vías nativas por FS (btrfs/XFS/ext4) como acelerador opcional | udev/sysfs: `ID_SERIAL_SHORT`, `ID_WWN_WITH_EXTENSION`, modelo, capacidad y offset de partición | `.cns` | Base, índice, volúmenes, nube y primitivas de `diskid`; scanner/snapshot/consultas en curso |
+
+### Lo que comparten
+
+- **Contrato de fuente**: `Entrada` y `Cambio` por lotes (`emit(&[Entrada])`), nunca un
+  `Vec` con el árbol completo. Los nombres Unix son bytes + `encoding`, no `String`.
+- **Identidad estable**: `pc_id` identifica la máquina; `DiskHwId` el hardware;
+  `volume_id` la partición; `cloud_id` la unidad de nube (`provider || cuenta || unidad`).
+  **El punto de montaje y la letra son sólo presentación**: un disco externo puede
+  aparecer como `/media/lucio/BACKUP`, `sdb1` o `sdc1` según el orden de enumeración.
+- **Nunca fusionar dos discos por etiqueta**: dos unidades llamadas `BACKUP` con
+  distinta serial son dos volúmenes; la que no está montada queda `offline`. Si la
+  serial se repite con distinto modelo/capacidad se marca `serial_ambiguo`; sin
+  identidad suficiente, `sin_identidad` y fuera de federación. Antes un volumen
+  faltante que dos discos mezclados.
+- **Offline es opt-in**: por defecto no se leen ni se muestran copias de discos
+  desconectados. Sin atribución de nube el volumen queda `posible_duplicado`, no se
+  fusiona en silencio, y los overrides manuales mandan.
+- **Catálogo entre PCs**: los índices se comparten por Tailscale. Si coinciden
+  `pc_id` y `volume_id` gana la `Marca` más nueva; si no, se desempata por contenido
+  y `built_at`, porque los relojes de PCs distintas no son confiables.
+
+### Linux, en concreto
+
+`linux/` es un crate independiente (`cd linux && cargo test`). Ya tiene el nodo de
+64 B, la arena de nombres plegada, el índice de hijos, la identidad de volúmenes y
+nube, las primitivas de identidad de hardware (`diskid.rs`, todavía sin integrar en
+`volumes`/`Root`) y la configuración de `pc_id`/offline/overrides. El binario WIP permite
+`census version`, `census cloud-id <provider> <cuenta> <unidad>` y `census mounts`.
+
+Falta el recorrido `getdents64`/`statx`, el snapshot `.cns`, el parser de consultas,
+el catálogo multi-PC y el servidor HTTP/MCP. El detalle, las decisiones y los
+bloqueos (WSL no arranca en esta máquina, así que todavía no hay números medidos)
+están en [`linux/PENDIENTE.md`](linux/PENDIENTE.md). El contrato entre las tres
+plataformas está en [`docs/PLATAFORMAS.md`](docs/PLATAFORMAS.md) y la identidad por
+hardware en [`docs/ATLAS.md`](docs/ATLAS.md) §10.
 
 ## Homenaje
 

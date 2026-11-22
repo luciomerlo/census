@@ -69,18 +69,20 @@ impl Mount {
 
     fn apply_cloud(&mut self, id: CloudId, cloud_id: &str) {
         self.kind = "cloud".into();
+        let attributed = id.attributed;
+        let possible_duplicate = id.possible_duplicate();
         self.cloud_provider = id.provider;
         self.cloud_account = id.account;
         self.cloud_unit = id.unit;
-        self.cloud_attributed = id.attributed;
-        self.possible_duplicate = id.possible_duplicate();
+        self.cloud_attributed = attributed;
+        self.possible_duplicate = possible_duplicate;
         self.cloud_note = id.note;
         self.cloud_id = cloud_id.to_string();
         self.fs_uuid = format!(
             "cloud:{}:{}:{}",
             self.cloud_provider, self.cloud_account, self.cloud_unit
         );
-        self.volume_id = if id.attributed {
+        self.volume_id = if attributed {
             cloud_id.to_string()
         } else {
             // Un desconocido no se fusiona con otro: id por camino.
@@ -90,8 +92,18 @@ impl Mount {
 }
 
 const NETWORK_FS: [&str; 12] = [
-    "cifs", "smb3", "smbfs", "nfs", "nfs4", "9p", "ceph", "glusterfs", "sshfs", "fuse.sshfs",
-    "davfs", "afs",
+    "cifs",
+    "smb3",
+    "smbfs",
+    "nfs",
+    "nfs4",
+    "9p",
+    "ceph",
+    "glusterfs",
+    "sshfs",
+    "fuse.sshfs",
+    "davfs",
+    "afs",
 ];
 
 const CLOUD_FS: [&str; 10] = [
@@ -360,7 +372,9 @@ pub fn cloud_mounts(ctx: &CloudContext) -> Vec<Mount> {
     }
     let mut out = Vec::new();
     for root in roots {
-        let Ok(rd) = fs::read_dir(&root) else { continue };
+        let Ok(rd) = fs::read_dir(&root) else {
+            continue;
+        };
         for entry in rd.flatten() {
             let path = crate::index::path_string(&entry.path());
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -517,6 +531,7 @@ mod tests {
         assert_eq!(m.len(), 1);
         assert_eq!(m[0].kind, "cloud");
         assert!(m[0].possible_duplicate);
-        assert!(m[0].cloud_id.is_empty());
+        assert!(!m[0].cloud_attributed);
+        assert!(!m[0].cloud_id.is_empty());
     }
 }

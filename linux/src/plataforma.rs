@@ -156,15 +156,15 @@ pub fn volume_id(fs_uuid: &str, fstype: &str, total_size: u64) -> String {
 
 /// Letra sintetica estable para `export --wcat`: se deriva del `volume_id`
 /// ordenado, nunca del orden de montaje.
-pub fn synthetic_letter(index: usize) -> char {
+pub fn synthetic_letter(index: usize) -> String {
     // A..Z, despues AA..AZ, BA.. (poco probable, pero no se repite).
     const L: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     if index < 26 {
-        L[index] as char
+        (L[index] as char).to_string()
     } else {
         let a = (index / 26 - 1).min(25);
         let b = index % 26;
-        L[a] as char
+        format!("{}{}", L[a] as char, L[b] as char)
     }
 }
 
@@ -194,8 +194,9 @@ mod tests {
 
     #[test]
     fn synthetic_letters_are_stable() {
-        assert_eq!(synthetic_letter(0), 'A');
-        assert_eq!(synthetic_letter(25), 'Z');
+        assert_eq!(synthetic_letter(0), "A");
+        assert_eq!(synthetic_letter(25), "Z");
+        assert_eq!(synthetic_letter(26), "AA");
         assert_ne!(synthetic_letter(26), synthetic_letter(0));
     }
 }

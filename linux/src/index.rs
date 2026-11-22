@@ -380,7 +380,9 @@ impl Index {
         let Some(end) = self.hijos_inicio.get(id as usize + 1) else {
             return &[];
         };
-        self.hijos.get(*start as usize..*end as usize).unwrap_or(&[])
+        self.hijos
+            .get(*start as usize..*end as usize)
+            .unwrap_or(&[])
     }
 
     pub fn node_alloc(&self, id: u32) -> u64 {
@@ -468,15 +470,21 @@ impl Index {
         self.hijos = hijos;
 
         let mut start = 0usize;
+        let nodes = &self.nodes;
+        let names = &self.names;
+        let name_of = |id: u32| -> &[u8] {
+            let Some(nd) = nodes.get(id as usize) else {
+                return &[];
+            };
+            let off = nd.name_off as usize;
+            let end = off.saturating_add(nd.name_len as usize);
+            names.get(off..end).unwrap_or(&[])
+        };
         for p in 0..n {
             let end = self.hijos_inicio[p + 1] as usize;
             if end > start {
                 let slice = &mut self.hijos[start..end];
-                slice.sort_unstable_by(|&a, &b| {
-                    self.name_bytes(a)
-                        .cmp(self.name_bytes(b))
-                        .then_with(|| a.cmp(&b))
-                });
+                slice.sort_unstable_by(|&a, &b| name_of(a).cmp(name_of(b)).then_with(|| a.cmp(&b)));
             }
             start = end;
         }
@@ -792,7 +800,19 @@ mod tests {
 
     fn sample() -> Index {
         let mut b = Builder::with_capacity(16);
-        let root = b.push(b"/", F_DIR | F_ROOT | F_COMPLETE, 0, 0, 0, 0, 0, 1, 1, 1, 0o755);
+        let root = b.push(
+            b"/",
+            F_DIR | F_ROOT | F_COMPLETE,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            1,
+            1,
+            0o755,
+        );
         b.nodes[root as usize].parent = root;
         let home = b.push(
             b"home",
@@ -904,7 +924,7 @@ mod tests {
         let out = fold_bytes(src);
         assert_eq!(out.len(), src.len());
         assert_eq!(out, "ñandú.txt".as_bytes());
-        assert!(contains_folded(&out, b"ñand"));
+        assert!(contains_folded(&out, b"\xC3\xB1and"));
     }
 
     #[test]
