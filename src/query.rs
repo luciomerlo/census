@@ -464,11 +464,12 @@ impl Index {
     /// Extras que coinciden por **nombre** con todos los términos.
     fn extras_por_nombre(&self, q: &Query) -> Vec<u32> {
         let mut out = Vec::new();
-        if self.overlay.is_empty() || q.terms.is_empty() {
+        let ov = self.overlay();
+        if ov.is_empty() || q.terms.is_empty() {
             return out;
         }
-        for id in self.overlay.ids(self) {
-            let Some(e) = self.overlay.extra(self, id) else {
+        for id in ov.ids(self) {
+            let Some(e) = ov.extra(self, id) else {
                 continue;
             };
             if !self.extra_pasa_filtros(q, e) {
@@ -485,11 +486,12 @@ impl Index {
     /// la ruta (la segunda fase, para un archivo recién creado).
     fn extras_por_ruta(&self, q: &Query) -> Vec<u32> {
         let mut out = Vec::new();
-        if self.overlay.is_empty() || q.terms.is_empty() {
+        let ov = self.overlay();
+        if ov.is_empty() || q.terms.is_empty() {
             return out;
         }
-        for id in self.overlay.ids(self) {
-            let Some(e) = self.overlay.extra(self, id) else {
+        for id in ov.ids(self) {
+            let Some(e) = ov.extra(self, id) else {
                 continue;
             };
             if !self.extra_pasa_filtros(q, e)
@@ -497,12 +499,7 @@ impl Index {
             {
                 continue;
             }
-            let ruta: Vec<u16> = self
-                .overlay
-                .ruta(self, e)
-                .encode_utf16()
-                .map(fold)
-                .collect();
+            let ruta: Vec<u16> = ov.ruta(self, e).encode_utf16().map(fold).collect();
             if q.terms.iter().all(|t| contains_folded(&ruta, t)) {
                 out.push(id);
             }
@@ -600,8 +597,11 @@ impl Index {
         let mut ids = self.scan(|id| self.passes_filters(q, id) && self.name_has_all(q, id));
         // Un archivo que el journal vio borrar ya no existe aunque siga en la
         // foto, y uno recién creado no está en la foto todavía.
-        if !self.overlay.is_empty() {
-            ids.retain(|&id| !self.overlay.id_borrado(self, id));
+        {
+            let ov = self.overlay();
+            if !ov.is_empty() {
+                ids.retain(|&id| !ov.id_borrado(self, id));
+            }
         }
         ids.extend(self.extras_por_nombre(q));
         let cuantos = ids.len();
@@ -625,7 +625,7 @@ impl Index {
             for id in candidatos {
                 if !self.passes_filters(q, id)
                     || self.name_has_all(q, id)
-                    || self.overlay.id_borrado(self, id)
+                    || self.overlay().id_borrado(self, id)
                 {
                     continue;
                 }

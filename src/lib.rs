@@ -4,6 +4,7 @@ pub mod ai;
 mod dirsize;
 #[cfg(feature = "gui")]
 pub mod gui;
+pub mod hot;
 pub mod index;
 mod indexes;
 pub mod mcp;

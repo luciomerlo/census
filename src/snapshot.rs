@@ -457,6 +457,12 @@ fn write_all<W: Write>(
             }
         }
     }
+
+    // Cola opcional: marca del journal aplicada (USN, C2). Los lectores viejos
+    // no la necesitan y los nuevos la toleran ausente.
+    let (journal_id, next_usn) = index.overlay().watermark.unwrap_or((0, 0));
+    w.u64(journal_id)?;
+    w.i64(next_usn)?;
     Ok(())
 }
 
@@ -738,6 +744,17 @@ pub fn load(path: &Path) -> Result<Index, LoadError> {
         }
     }
 
+    // Cola opcional con la marca del journal.
+    let mut cola = [0u8; 16];
+    let marca = if file.read_exact(&mut cola).is_ok() {
+        Some((
+            u64::from_le_bytes(cola[0..8].try_into().unwrap()),
+            i64::from_le_bytes(cola[8..16].try_into().unwrap()),
+        ))
+    } else {
+        None
+    };
+
     // Recién ahora comparamos el checksum: antes pasaron las validaciones
     // estructurales, así que un `BadIndex` tiene prioridad sobre `Checksum`.
     if h.finish() != checksum {
@@ -763,8 +780,14 @@ pub fn load(path: &Path) -> Result<Index, LoadError> {
         tin: Vec::new(),
         tout: Vec::new(),
         frn_sorted: false,
-        overlay: crate::overlay::Overlay::default(),
+        overlay: std::sync::Arc::new(std::sync::RwLock::new(crate::overlay::Overlay::default())),
     };
+    if let Some((id, usn)) = marca {
+        if id != 0 {
+            *ix.overlay.write().unwrap_or_else(|e| e.into_inner()) =
+                crate::overlay::Overlay::desde_watermark(id, usn);
+        }
+    }
     // Si el snapshot trae todo, sólo se reconstruye lo barato (rango y
     // tin/tout). Si no (v2 con bloques vacíos), se calcula como siempre.
     let completo = ix.dir_bytes.len() == ix.nodes.len()
@@ -1067,7 +1090,8 @@ mod tests {
             + 4 * ix.hijos_inicio.len() as u64
             + 4 * ix.hijos.len() as u64
             + 4 * ix.por_nombre.len() as u64
-            + 4 * ix.euler.len() as u64;
+            + 4 * ix.euler.len() as u64
+            + 16; // cola con la marca del journal
         assert_eq!(meta.len(), esperado);
 
         // Y para un índice vacío: sólo cabecera.
@@ -1075,7 +1099,7 @@ mod tests {
         save(&Index::default(), t2.path()).unwrap();
         assert_eq!(
             fs::metadata(t2.path()).unwrap().len(),
-            HEADER_LEN as u64 + 6 * 4
+            HEADER_LEN as u64 + 6 * 4 + 16
         );
     }
 

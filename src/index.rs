@@ -65,9 +65,10 @@ pub struct Index {
     pub tout: Vec<u32>,
     /// `true` si `nodes` está ordenado por FRN (lo está cuando viene de la MFT).
     pub frn_sorted: bool,
-    /// Cambios aplicados desde el snapshot (USN Journal, C2). Fuera del
-    /// snapshot a propósito: se rehace desde el watermark al arrancar.
-    pub overlay: crate::overlay::Overlay,
+    /// Cambios aplicados desde el snapshot (USN Journal, C2). Va detrás de un
+    /// cerrojo porque el hilo del journal lo actualiza mientras la ventana y
+    /// el IPC consultan. Se toma **una vez por consulta**, nunca por nodo.
+    pub overlay: std::sync::Arc<std::sync::RwLock<crate::overlay::Overlay>>,
 }
 
 pub struct Builder {
@@ -188,7 +189,9 @@ impl Builder {
             tin: Vec::new(),
             tout: Vec::new(),
             frn_sorted: false,
-            overlay: crate::overlay::Overlay::default(),
+            overlay: std::sync::Arc::new(
+                std::sync::RwLock::new(crate::overlay::Overlay::default()),
+            ),
         };
         ix.compute_dir_bytes();
         ix.compute_folded();
@@ -211,10 +214,6 @@ impl Index {
     /// Nombre en UTF-16. Un id fuera de rango o un offset corrupto devuelven
     /// vacío en vez de paniquear: el índice también se carga de disco.
     pub fn name_utf16(&self, id: u32) -> &[u16] {
-        // Los ids sintéticos del overlay no están en `nodes`.
-        if let Some(e) = self.overlay.extra(self, id) {
-            return &e.nombre;
-        }
         let Some(n) = self.nodes.get(id as usize) else {
             return &[];
         };
@@ -225,9 +224,6 @@ impl Index {
 
     /// Nombre plegado (minúsculas, sin acentos) para comparar rápido.
     pub fn name_folded(&self, id: u32) -> &[u16] {
-        if let Some(e) = self.overlay.extra(self, id) {
-            return &e.plegado;
-        }
         let Some(n) = self.nodes.get(id as usize) else {
             return &[];
         };
@@ -246,7 +242,7 @@ impl Index {
     }
 
     pub fn is_dir(&self, id: u32) -> bool {
-        if let Some(e) = self.overlay.extra(self, id) {
+        if let Some(e) = self.overlay_extra(id) {
             return e.carpeta;
         }
         self.nodes
@@ -263,6 +259,26 @@ impl Index {
     /// Padre de un nodo, si el id existe.
     pub fn parent(&self, id: u32) -> Option<u32> {
         self.nodes.get(id as usize).map(|n| n.parent)
+    }
+
+    /// Cerrojo de lectura del overlay (los cerrojos no se envenenan acá: si un
+    /// hilo murió con el lock tomado, seguimos igual).
+    pub fn overlay(&self) -> std::sync::RwLockReadGuard<'_, crate::overlay::Overlay> {
+        self.overlay.read().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Cerrojo de escritura del overlay (lo usa el hilo del journal).
+    pub fn overlay_mut(&self) -> std::sync::RwLockWriteGuard<'_, crate::overlay::Overlay> {
+        self.overlay.write().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Nombre del extra si el id es sintético.
+    pub fn overlay_extra(&self, id: u32) -> Option<crate::overlay::Extra> {
+        if id as usize >= self.nodes.len() {
+            let ov = self.overlay();
+            return ov.extra(self, id).cloned();
+        }
+        None
     }
 
     /// Busca un nodo por su FRN. Aprovecha que la MFT llega ordenada; si el
@@ -316,8 +332,9 @@ impl Index {
 
     /// Ruta completa.
     pub fn full_path(&self, id: u32) -> String {
-        if let Some(e) = self.overlay.extra(self, id) {
-            return self.overlay.ruta(self, e);
+        let ov = self.overlay();
+        if let Some(e) = ov.extra(self, id) {
+            return ov.ruta(self, e);
         }
         if self.is_drive(id) {
             return self.name_string(id);
@@ -424,7 +441,9 @@ impl Index {
             tin: Vec::new(),
             tout: Vec::new(),
             frn_sorted: false,
-            overlay: crate::overlay::Overlay::default(),
+            overlay: std::sync::Arc::new(
+                std::sync::RwLock::new(crate::overlay::Overlay::default()),
+            ),
         };
         ix.compute_dir_bytes();
         ix.compute_folded();
