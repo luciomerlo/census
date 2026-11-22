@@ -22,9 +22,9 @@ Cada PC indexa sus discos y produce un `.wcat`. Queremos:
 |---|---|---|
 | Red | `machine_id` (estable) + `dns_name` | `tailscale status --json` |
 | PC | `pc_id` = hash de la clave pública de la PC | la genera Census la primera vez |
-| Disco | `disk_id` = `vol_serial` + tamaño | `GetVolumeInformationW`, ya lo tenemos |
+| Disco | `volume_id` = `vol_serial` + tamaño | `GetVolumeInformationW`, ya lo tenemos |
 
-Una entrada de índice se identifica por la terna **`pc_id` / `disk_id` /
+Una entrada de índice se identifica por la terna **`pc_id` / `volume_id` /
 `version`**. Eso permite que dos PCs tengan el mismo disco físico (un SSD
 externo que se enchufa en dos máquinas) y se entienda como **el mismo disco**,
 no como dos.
@@ -38,7 +38,7 @@ Cada snapshot trae, en su cabecera y en la cola:
 - **`content_hash`**: FNV-64 del archivo, calculado al guardar (barato, ya
   recorremos los bytes)
 
-Comparación de dos versiones del mismo `disk_id`:
+Comparación de dos versiones del mismo `volume_id`:
 
 1. Gana el `journal_id` más alto; dentro de ese, el `next_usn` más alto (es el
    orden real de los cambios, no el reloj).
@@ -60,7 +60,7 @@ hibernación). El USN no.
                                     │
                        %LOCALAPPDATA%\Census\atlas\
                          manifest.json
-                         <pc_id>/<disk_id>/<version>.wcat
+                         <pc_id>/<volume_id>/<version>.wcat
 ```
 
 - **Descubrimiento**: `tailscale status --json` (o `tailscale status` en texto
@@ -68,8 +68,8 @@ hibernación). El USN no.
   que configurar IPs a mano.
 - **Transporte**: HTTP/1.1 sobre la IP de Tailscale (o MagicDNS), con `ureq`
   que ya está en el proyecto. El hub expone:
-  - `GET /manifest` → lista de `{pc_id, pc_name, disk_id, version, built_at, next_usn, bytes, content_hash}`
-  - `GET /snapshot/<pc_id>/<disk_id>/<version>` → el `.wcat` (o un rango con `Range`)
+  - `GET /manifest` → lista de `{pc_id, pc_name, volume_id, version, built_at, next_usn, bytes, content_hash}`
+  - `GET /snapshot/<pc_id>/<volume_id>/<version>` → el `.wcat` (o un rango con `Range`)
   - `GET /query?...` → consulta federada del lado del hub (opcional)
 - **Push**: cada agente, después de indexar, hace `PUT /snapshot` con su
   archivo. Si el hub no está, guarda en una cola local y reintenta.
@@ -79,7 +79,7 @@ hibernación). El USN no.
 ## Offline: el punto central
 
 El hub **nunca borra** la última versión de un disco. Estados posibles por
-`(pc_id, disk_id)`:
+`(pc_id, volume_id)`:
 
 | Estado | Cómo se detecta | Qué se muestra |
 |---|---|---|

@@ -1,0 +1,33 @@
+[package]
+name = "census"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Indice instantaneo de archivos para Linux, compartido por Tailscale y expuesto por MCP"
+repository = "https://github.com/example/census"
+default-run = "census"
+
+[lib]
+name = "census"
+path = "src/lib.rs"
+
+[[bin]]
+name = "census"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+memchr = "2"
+tiny_http = "0.12"
+notify = "6.1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"
