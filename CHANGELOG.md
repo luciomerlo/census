@@ -40,6 +40,22 @@ Ronda de revisión de bugs y dependencias. Sin cambios de formato ni de protocol
 - Mensaje de capacidades `WM_USER + 402` y `flags` de la respuesta con **sólo los campos
   que vinieron** (`run_count` nunca se anuncia).
 
+## [Unreleased]
+
+### Agregado
+
+- **Actualización en caliente con el USN Journal (C2)**: un vigilante lee el
+  diario de NTFS cada 2 s y aplica los cambios sobre una capa `Overlay`. Un
+  archivo creado aparece en la búsqueda sin reindexar y uno borrado
+  desaparece. `census watch` lo muestra en vivo.
+- La marca del journal (`journal_id`, `next_usn`) viaja dentro del snapshot; si
+  el diario se reinició, se avisa que hace falta reindexar.
+
+### Corregido
+
+- El FRN del journal se enmascara a 48 bits para que coincida con el del
+  índice, y se ocultan los FRN «pisados» por reúso de número de registro.
+
 ## [0.2.0] - 2026-11-21
 
 ### Rendimiento

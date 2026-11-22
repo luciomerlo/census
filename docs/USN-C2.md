@@ -29,15 +29,15 @@ después el overlay de nuevos (que es chico), con la ruta armada desde el padre.
 
 - [x] `src/usn.rs`: abrir el journal, leer registros y parsear `USN_RECORD_V2`
       (con tests sobre buffers sintéticos).
-- [ ] `src/overlay.rs`: estructura, `aplicar(cambios)`, resolución de rutas y
+- [x] `src/overlay.rs`: estructura, `aplicar(cambios)`, resolución de rutas y
       matching (misma semántica que el índice: nombre primero, carpeta después).
-- [ ] Integrar en `query`: descartar borrados, sumar nuevos, respetar filtros.
-- [ ] `next_usn` + `journal_id` en el snapshot (formato v3); replay al arrancar.
-- [ ] Journal reiniciado o dado vuelta → reindexar el volumen (avisar en
+- [x] Integrar en `query`: descartar borrados, sumar nuevos, respetar filtros.
+- [x] `next_usn` + `journal_id` en el snapshot (formato v3); replay al arrancar.
+- [x] Journal reiniciado o dado vuelta → reindexar el volumen (avisar en
       `activity-Census.json`).
-- [ ] Hilo de fondo en `serve`/`gui`: consultar cada 2 s y aplicar.
+- [x] Hilo de fondo en `serve`/`gui`: consultar cada 2 s y aplicar.
 - [ ] Compactación del overlay.
-- [ ] Medir: latencia de aparición de un archivo nuevo y costo de aplicar lotes.
+- [x] Medir: latencia de aparición de un archivo nuevo y costo de aplicar lotes.
 
 ## Casos límite
 
@@ -58,3 +58,21 @@ después el overlay de nuevos (que es chico), con la ruta armada desde el padre.
 - Motivos: `FILE_CREATE` 0x100, `FILE_DELETE` 0x200, `RENAME_OLD_NAME` 0x1000,
   `RENAME_NEW_NAME` 0x2000, `CLOSE` 0x8000_0000.
 - `USN_RECORD_V2`: cabecera de 60 bytes, nombre UTF-16 en `FileNameOffset`.
+
+## Verificado el 2026-11-22
+
+```
+vigilando C: (Ctrl+C para cortar)
+aplicados 278 cambios (en el overlay: 534)
+  "pruebac2" -> 1 resultados ["C:\Users\Lucio\pruebac2-caliente.txt"]
+aplicados 18 cambios (en el overlay: 572)
+  "pruebac2" -> 0 resultados []
+```
+
+Dos detalles que costaron encontrar:
+
+1. El FRN del journal trae la secuencia en los 16 bits altos y el índice guarda
+   sólo el número de registro: hay que enmascarar (`FRN_MASK`).
+2. Windows reusa números de registro, así que un archivo creado puede heredar
+   el FRN de uno borrado. Por eso, además de `borrados`, el overlay lleva
+   `pisados`: FRN que el journal tocó y que ya estaban en la foto.
