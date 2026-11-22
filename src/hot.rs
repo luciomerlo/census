@@ -90,9 +90,15 @@ impl Vigilante {
             let ov = ix.overlay();
             match ov.watermark {
                 Some((id, usn)) => (id, usn),
-                // Sin marcador: no sabemos qué nos perdimos. Arrancamos desde
-                // el final en vez de fingir que aplicamos historia.
-                None => (diario.id, diario.next_usn),
+                // Sin marcador: no sabemos qué nos perdimos, así que arrancamos
+                // desde el final. Hay que dejarlo guardado o el vigilante
+                // volvería a saltarse todo en cada vuelta.
+                None => {
+                    drop(ov);
+                    let mut ov = ix.overlay_mut();
+                    ov.watermark = Some((diario.id, diario.next_usn));
+                    return Latido::Nada;
+                }
             }
         };
         // El diario cambió de identidad o se dio vuelta: los cambios volaron.

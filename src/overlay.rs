@@ -58,6 +58,9 @@ pub struct Overlay {
     extras: Vec<Extra>,
     por_frn: HashMap<u64, usize>,
     borrados: HashSet<u64>,
+    /// FRN que el journal cambió y que también están en la foto: la foto
+    /// quedó vieja para esos archivos, manda el overlay.
+    pisados: HashSet<u64>,
     /// `(journal_id, next_usn)` que ya se aplicaron.
     pub watermark: Option<(u64, i64)>,
     /// Cuántos cambios se aplicaron desde la última compactación.
@@ -78,7 +81,7 @@ impl Overlay {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.extras.is_empty() && self.borrados.is_empty()
+        self.extras.is_empty() && self.borrados.is_empty() && self.pisados.is_empty()
     }
 
     /// Aplica los cambios en orden y devuelve cuántos alteraron el estado.
@@ -86,7 +89,6 @@ impl Overlay {
     /// Un mismo FRN puede venir varias veces (crear, escribir, cerrar, borrar):
     /// gana siempre el último estado, que es lo que hace este recorrido.
     pub fn aplicar(&mut self, ix: &Index, cambios: &[Cambio]) -> usize {
-        let _ = ix;
         let mut alterados = 0usize;
         for c in cambios {
             if c.frn == 0 {
@@ -122,6 +124,12 @@ impl Overlay {
                 }
             }
             self.borrados.remove(&c.frn);
+            // Si la foto ya tenía ese FRN, hay que ocultarlo: Windows reusa
+            // números de registro, así que un archivo nuevo puede heredar el
+            // del viejo y aparecería dos veces.
+            if ix.find_by_frn(c.frn).is_some() {
+                self.pisados.insert(c.frn);
+            }
             self.aplicados += 1;
         }
         alterados
@@ -155,14 +163,17 @@ impl Overlay {
         self.extras.iter()
     }
 
-    /// ¿Este id del índice principal apunta a un archivo que ya no existe?
+    /// ¿Este id del índice principal quedó viejo?
+    ///
+    /// Pasa por dos motivos: el archivo se borró, o el journal lo cambió y la
+    /// foto ya no es cierta para ese FRN (ahí manda el overlay).
     pub fn id_borrado(&self, ix: &Index, id: u32) -> bool {
-        if self.borrados.is_empty() {
+        if self.borrados.is_empty() && self.pisados.is_empty() {
             return false;
         }
         ix.nodes
             .get(id as usize)
-            .is_some_and(|n| self.borrados.contains(&n.frn))
+            .is_some_and(|n| self.borrados.contains(&n.frn) || self.pisados.contains(&n.frn))
     }
 
     pub fn nombre_string(&self, e: &Extra) -> String {
@@ -198,6 +209,7 @@ impl Overlay {
         self.extras.clear();
         self.por_frn.clear();
         self.borrados.clear();
+        self.pisados.clear();
         self.aplicados = 0;
     }
 

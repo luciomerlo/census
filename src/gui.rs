@@ -1141,6 +1141,9 @@ fn icono() -> egui::IconData {
 
 pub fn run(index: Arc<Index>, opts: GuiOptions) -> Result<(), String> {
     let title = format!("Census — volumen {}", index.letter);
+    // El journal mantiene la ventana al día sin reindexar (C2). Si no hay
+    // permisos, el vigilante se corta solo y todo sigue como antes.
+    let _vigilante = crate::hot::arrancar(Arc::clone(&index), index.letter);
     // Menos 80 px para el marco: la ventana tiene que entrar completa.
     let (work_w, work_h) = crate::win::work_area();
     let w = (work_w as f32 - 40.0).clamp(720.0, 1180.0);

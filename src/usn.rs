@@ -23,6 +23,11 @@ pub const FSCTL_QUERY_USN_JOURNAL: u32 = 0x0009_00F4;
 /// `FSCTL_READ_USN_JOURNAL`: leer registros desde un USN.
 pub const FSCTL_READ_USN_JOURNAL: u32 = 0x0009_00BB;
 
+/// El FRN de NTFS es `secuencia (16 bits) << 48 | número de registro (48)`.
+/// El índice guarda sólo el número de registro, así que se enmascara acá: es
+/// el único punto donde se traducen las dos representaciones.
+pub const FRN_MASK: u64 = 0x0000_FFFF_FFFF_FFFF;
+
 /// `USN_REASON_FILE_CREATE`
 pub const REASON_CREATE: u32 = 0x0000_0100;
 /// `USN_REASON_FILE_DELETE`
@@ -203,8 +208,8 @@ pub fn parse_records(bytes: &[u8]) -> Vec<Cambio> {
             off += salto;
             continue;
         }
-        let frn = u64::from_le_bytes(bytes[off + 8..off + 16].try_into().unwrap());
-        let padre = u64::from_le_bytes(bytes[off + 16..off + 24].try_into().unwrap());
+        let frn = u64::from_le_bytes(bytes[off + 8..off + 16].try_into().unwrap()) & FRN_MASK;
+        let padre = u64::from_le_bytes(bytes[off + 16..off + 24].try_into().unwrap()) & FRN_MASK;
         let motivo = u32::from_le_bytes(bytes[off + 40..off + 44].try_into().unwrap());
         let attrs = u32::from_le_bytes(bytes[off + 52..off + 56].try_into().unwrap());
         let nombre_len = u16::from_le_bytes(bytes[off + 56..off + 58].try_into().unwrap()) as usize;
@@ -298,6 +303,22 @@ mod tests {
         let cambios = parse_records(&bytes);
         assert_eq!(cambios.len(), 1);
         assert_eq!(cambios[0].frn, 2);
+    }
+
+    #[test]
+    fn enmascara_la_secuencia_del_frn() {
+        // FRN real: secuencia 21 en los 16 bits altos, registro 0x14F6 abajo.
+        let frn_con_secuencia = (21u64 << 48) | 0x14F6;
+        let b = registro(
+            frn_con_secuencia,
+            (21u64 << 48) | 5,
+            REASON_CREATE,
+            0x20,
+            &utf16("x"),
+        );
+        let c = parse_records(&b);
+        assert_eq!(c[0].frn, 0x14F6);
+        assert_eq!(c[0].padre, 5);
     }
 
     #[test]
