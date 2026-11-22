@@ -29,7 +29,7 @@
 //! | 57  | u64    | stats.dirs |
 //! | 65  | u64    | stats.skipped |
 //! | 73  | u64    | stats.build_ms (u128 truncado a u64) |
-//! | 81  | u64    | checksum: FNV-1a 64 sobre nodos + arena |
+//! | 81  | u64    | checksum: FNV-1a 64 sobre nodos + arena + índices derivados |
 //!
 //! Nota: los campos pedidos para la cabecera suman 89 bytes (no 64); el
 //! tamaño total del archivo es `HEADER_LEN + 4*root_count + 48*node_count +
@@ -42,6 +42,17 @@
 //!    little-endian: `name_off` u32, `name_len` u16, `flags` u16, `parent`
 //!    u32, `size` u64, `mtime` i64, `atime` i64, `attrs` u32, `frn` u64.
 //! 3. `names`: la arena UTF-16, u16 × name_units, little-endian.
+//!
+//! Desde la **versión 2** se guardan también los índices derivados, para no
+//! recalcularlos al arrancar. Cada bloque lleva un `u32` con su cantidad
+//! (0 = no estaba y hay que recalcularlo):
+//!
+//! 4. `folded`: u16 × folded.len() (mismos offsets que `names`).
+//! 5. `dir_bytes`: u64 × node_count (tamaño recursivo de cada carpeta).
+//! 6. `hijos_inicio`: u32 × (node_count + 1) — CSR de hijos.
+//! 7. `hijos`: u32 × M — ids de los hijos.
+//! 8. `por_nombre`: u32 × node_count — ids ordenados por nombre plegado.
+//! 9. `euler`: u32 × node_count — preorden; el rango de subárbol sale de acá.
 //!
 //! El checksum (FNV-1a 64, offset `0xcbf29ce484222325`, primo
 //! `0x100000001b3`) cubre los bytes de los nodos y de la arena; la cabecera y
@@ -63,7 +74,7 @@ use crate::index::{Index, Node, Stats};
 const MAGIC: [u8; 10] = *b"CENSUSWCAT";
 
 /// Versión del formato que escribimos y leemos.
-const VERSION: u16 = 1;
+const VERSION: u16 = 2;
 
 /// Bit 0 de `flags`: campos en little-endian.
 const FLAG_LE: u16 = 0x1;
@@ -90,22 +101,57 @@ const NODE_PARENT_OFF: usize = 8;
 
 // ---------------------------------------------------------------- FNV-1a 64
 
-/// FNV-1a 64 bits, streaming, sin dependencias.
-struct Fnv(u64);
+/// FNV-1a 64 bits por palabras de 8 bytes, sin dependencias.
+///
+/// Guarda hasta 7 bytes sin mezclar, así el resultado **no depende de cómo se
+/// parta la entrada en trozos**: escribir de a 64 KB y leer de a 284 MB dan el
+/// mismo valor. Es lo que permite hashear rápido y validar igual.
+struct Fnv {
+    h: u64,
+    resto: [u8; 8],
+    n: usize,
+}
 
 impl Fnv {
     fn new() -> Self {
-        Fnv(0xcbf29ce484222325)
-    }
-    fn byte(&mut self, b: u8) {
-        self.0 ^= b as u64;
-        self.0 = self.0.wrapping_mul(0x100000001b3);
-    }
-    fn bytes(&mut self, b: &[u8]) {
-        for &x in b {
-            self.byte(x);
+        Fnv {
+            h: 0xcbf29ce484222325,
+            resto: [0u8; 8],
+            n: 0,
         }
     }
+
+    fn palabra(&mut self, b: &[u8; 8]) {
+        self.h ^= u64::from_le_bytes(*b);
+        self.h = self.h.wrapping_mul(0x100000001b3);
+    }
+
+    fn bytes(&mut self, b: &[u8]) {
+        let mut i = 0;
+        // Completar la palabra que quedó a medias.
+        while self.n > 0 && self.n < 8 && i < b.len() {
+            self.resto[self.n] = b[i];
+            self.n += 1;
+            i += 1;
+        }
+        if self.n == 8 {
+            let r = self.resto;
+            self.palabra(&r);
+            self.n = 0;
+        }
+        while i + 8 <= b.len() {
+            let w: [u8; 8] = b[i..i + 8].try_into().unwrap();
+            self.palabra(&w);
+            i += 8;
+        }
+        while i < b.len() {
+            self.resto[self.n] = b[i];
+            self.n += 1;
+            i += 1;
+        }
+    }
+
+    #[allow(dead_code)]
     fn u16(&mut self, v: u16) {
         self.bytes(&v.to_le_bytes());
     }
@@ -117,8 +163,54 @@ impl Fnv {
     fn u64(&mut self, v: u64) {
         self.bytes(&v.to_le_bytes());
     }
-    fn finish(self) -> u64 {
-        self.0
+
+    fn finish(mut self) -> u64 {
+        for k in 0..self.n {
+            self.h ^= self.resto[k] as u64;
+            self.h = self.h.wrapping_mul(0x100000001b3);
+        }
+        self.h
+    }
+}
+
+/// Hashea una tanda de `u16` sin alocar: 32 KB por vuelta.
+fn hash_u16s(h: &mut Fnv, data: &[u16]) {
+    let mut buf = [0u8; 32 * 1024];
+    for trozo in data.chunks(16 * 1024) {
+        let mut n = 0;
+        for v in trozo {
+            let b = v.to_le_bytes();
+            buf[n] = b[0];
+            buf[n + 1] = b[1];
+            n += 2;
+        }
+        h.bytes(&buf[..n]);
+    }
+}
+
+fn hash_u32s(h: &mut Fnv, data: &[u32]) {
+    let mut buf = [0u8; 32 * 1024];
+    for trozo in data.chunks(8 * 1024) {
+        let mut n = 0;
+        for v in trozo {
+            let b = v.to_le_bytes();
+            buf[n..n + 4].copy_from_slice(&b);
+            n += 4;
+        }
+        h.bytes(&buf[..n]);
+    }
+}
+
+fn hash_u64s(h: &mut Fnv, data: &[u64]) {
+    let mut buf = [0u8; 32 * 1024];
+    for trozo in data.chunks(4 * 1024) {
+        let mut n = 0;
+        for v in trozo {
+            let b = v.to_le_bytes();
+            buf[n..n + 8].copy_from_slice(&b);
+            n += 8;
+        }
+        h.bytes(&buf[..n]);
     }
 }
 
@@ -154,15 +246,40 @@ fn node_from_bytes(b: &[u8; NODE_LEN]) -> Node {
 
 /// Hash FNV-1a 64 de los nodos + la arena, en el mismo orden en que se
 /// escriben en el archivo. `save` y `load` comparten esta definición.
-fn checksum_of(nodes: &[Node], names: &[u16]) -> u64 {
+/// Checksum del cuerpo: nodos, arena y los cinco bloques derivados.
+fn checksum_of(index: &Index) -> u64 {
     let mut h = Fnv::new();
-    let mut buf = [0u8; NODE_LEN];
-    for n in nodes {
-        node_to_bytes(n, &mut buf);
-        h.bytes(&buf);
+    let mut buf = vec![0u8; NODE_LEN * 1024];
+    for trozo in index.nodes.chunks(1024) {
+        let mut n = 0;
+        for nodo in trozo {
+            let mut uno = [0u8; NODE_LEN];
+            node_to_bytes(nodo, &mut uno);
+            buf[n..n + NODE_LEN].copy_from_slice(&uno);
+            n += NODE_LEN;
+        }
+        h.bytes(&buf[..n]);
     }
-    for &u in names {
-        h.u16(u);
+    hash_u16s(&mut h, &index.names);
+    // Los bloques se hashean igual que se escriben: cantidad (u32) y datos.
+    let bloques: [usize; 6] = [
+        index.folded.len(),
+        index.dir_bytes.len(),
+        index.hijos_inicio.len(),
+        index.hijos.len(),
+        index.por_nombre.len(),
+        index.euler.len(),
+    ];
+    for (i, &len) in bloques.iter().enumerate() {
+        h.u32(len as u32);
+        match i {
+            0 => hash_u16s(&mut h, &index.folded),
+            1 => hash_u64s(&mut h, &index.dir_bytes),
+            2 => hash_u32s(&mut h, &index.hijos_inicio),
+            3 => hash_u32s(&mut h, &index.hijos),
+            4 => hash_u32s(&mut h, &index.por_nombre),
+            _ => hash_u32s(&mut h, &index.euler),
+        }
     }
     h.finish()
 }
@@ -209,7 +326,7 @@ pub fn save(index: &Index, path: &Path) -> std::io::Result<u64> {
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "demasiadas raíces"))?;
     let build_ms = u64::try_from(index.stats.build_ms).unwrap_or(u64::MAX);
 
-    let checksum = checksum_of(&index.nodes, &index.names);
+    let checksum = checksum_of(index);
 
     // El directorio contenedor puede no existir todavía (%LOCALAPPDATA%\Census).
     if let Some(parent) = path.parent() {
@@ -289,6 +406,56 @@ fn write_all<W: Write>(
     }
     if !chunk.is_empty() {
         w.raw(&chunk)?;
+    }
+
+    // Bloques derivados (v2). Un 0 en la cantidad significa "no está".
+    let bloques: [usize; 6] = [
+        index.folded.len(),
+        index.dir_bytes.len(),
+        index.hijos_inicio.len(),
+        index.hijos.len(),
+        index.por_nombre.len(),
+        index.euler.len(),
+    ];
+    for (i, &len) in bloques.iter().enumerate() {
+        w.u32(u32::try_from(len).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "bloque derivado demasiado grande",
+            )
+        })?)?;
+        match i {
+            0 => {
+                for &u in &index.folded {
+                    w.u16(u)?;
+                }
+            }
+            1 => {
+                for &v in &index.dir_bytes {
+                    w.u64(v)?;
+                }
+            }
+            2 => {
+                for &v in &index.hijos_inicio {
+                    w.u32(v)?;
+                }
+            }
+            3 => {
+                for &v in &index.hijos {
+                    w.u32(v)?;
+                }
+            }
+            4 => {
+                for &v in &index.por_nombre {
+                    w.u32(v)?;
+                }
+            }
+            _ => {
+                for &v in &index.euler {
+                    w.u32(v)?;
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -493,6 +660,84 @@ pub fn load(path: &Path) -> Result<Index, LoadError> {
         .map(|c| u16::from_le_bytes([c[0], c[1]]))
         .collect();
 
+    // Bloques derivados (v2). Si faltan (cantidad 0), se recalculan abajo.
+    let leer_bloque = |file: &mut fs::File,
+                       h: &mut Fnv,
+                       techo: u32,
+                       cual: usize|
+     -> Result<(u32, Vec<u8>), LoadError> {
+        let mut cb = [0u8; 4];
+        file.read_exact(&mut cb).map_err(eof_or_io)?;
+        h.bytes(&cb);
+        let cant = u32::from_le_bytes(cb);
+        if cant > techo {
+            return Err(LoadError::BadIndex(format!(
+                "bloque derivado {cual} absurdo: {cant} > {techo}"
+            )));
+        }
+        Ok((cant, Vec::new()))
+    };
+    let mut bloques: Vec<Vec<u8>> = Vec::with_capacity(6);
+    let techos = [
+        name_units.saturating_add(1),
+        node_count.saturating_add(1),
+        node_count.saturating_add(1),
+        node_count.saturating_mul(4).saturating_add(1),
+        node_count.saturating_add(1),
+        node_count.saturating_add(1),
+    ];
+    let anchos = [2usize, 8, 4, 4, 4, 4];
+    let mut cantidades = [0u32; 6];
+    for i in 0..6 {
+        let (cant, _) = leer_bloque(&mut file, &mut h, techos[i], i)?;
+        cantidades[i] = cant;
+        let mut bytes = vec![0u8; cant as usize * anchos[i]];
+        file.read_exact(&mut bytes).map_err(eof_or_io)?;
+        h.bytes(&bytes);
+        bloques.push(bytes);
+    }
+
+    let u16s = |b: &[u8]| -> Vec<u16> {
+        b.chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect()
+    };
+    let u32s = |b: &[u8]| -> Vec<u32> {
+        b.chunks_exact(4)
+            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect()
+    };
+    let u64s = |b: &[u8]| -> Vec<u64> {
+        b.chunks_exact(8)
+            .map(|c| u64::from_le_bytes(c.try_into().unwrap()))
+            .collect()
+    };
+    let folded = u16s(&bloques[0]);
+    let dir_bytes = u64s(&bloques[1]);
+    let hijos_inicio = u32s(&bloques[2]);
+    let hijos = u32s(&bloques[3]);
+    let por_nombre = u32s(&bloques[4]);
+    let euler = u32s(&bloques[5]);
+    if !folded.is_empty() && folded.len() != names.len() {
+        return Err(LoadError::BadIndex(
+            "folded no tiene el mismo largo que la arena".into(),
+        ));
+    }
+    if !dir_bytes.is_empty() && dir_bytes.len() != nodes.len() {
+        return Err(LoadError::BadIndex(
+            "dir_bytes no tiene un valor por nodo".into(),
+        ));
+    }
+    for (nombre, bloque) in [
+        ("hijos_inicio", &hijos_inicio),
+        ("por_nombre", &por_nombre),
+        ("euler", &euler),
+    ] {
+        if bloque.iter().any(|&v| v >= node_count.max(1)) {
+            return Err(LoadError::BadIndex(format!("{nombre}: id fuera de rango")));
+        }
+    }
+
     // Recién ahora comparamos el checksum: antes pasaron las validaciones
     // estructurales, así que un `BadIndex` tiene prioridad sobre `Checksum`.
     if h.finish() != checksum {
@@ -507,20 +752,31 @@ pub fn load(path: &Path) -> Result<Index, LoadError> {
         names,
         stats,
         built_at,
-        dir_bytes: Vec::new(),
+        dir_bytes,
         vol_serials: Vec::new(),
-        folded: Vec::new(),
-        hijos_inicio: Vec::new(),
-        hijos: Vec::new(),
-        por_nombre: Vec::new(),
+        folded,
+        hijos_inicio,
+        hijos,
+        por_nombre,
         rango: Vec::new(),
-        euler: Vec::new(),
+        euler,
         tin: Vec::new(),
         tout: Vec::new(),
     };
-    ix.compute_dir_bytes();
-    ix.compute_folded();
-    ix.rebuild_indexes();
+    // Si el snapshot trae todo, sólo se reconstruye lo barato (rango y
+    // tin/tout). Si no (v2 con bloques vacíos), se calcula como siempre.
+    let completo = ix.dir_bytes.len() == ix.nodes.len()
+        && ix.folded.len() == ix.names.len()
+        && ix.hijos_inicio.len() == ix.nodes.len() + 1
+        && ix.por_nombre.len() == ix.nodes.len()
+        && ix.euler.len() == ix.nodes.len();
+    if completo {
+        ix.rebuild_light();
+    } else {
+        ix.compute_dir_bytes();
+        ix.compute_folded();
+        ix.rebuild_indexes();
+    }
     Ok(ix)
 }
 
@@ -802,13 +1058,23 @@ mod tests {
         let esperado = (HEADER_LEN as u64)
             + 4 * ix.roots.len() as u64
             + NODE_LEN as u64 * ix.nodes.len() as u64
-            + 2 * ix.names.len() as u64;
+            + 2 * ix.names.len() as u64
+            + 6 * 4
+            + 2 * ix.folded.len() as u64
+            + 8 * ix.dir_bytes.len() as u64
+            + 4 * ix.hijos_inicio.len() as u64
+            + 4 * ix.hijos.len() as u64
+            + 4 * ix.por_nombre.len() as u64
+            + 4 * ix.euler.len() as u64;
         assert_eq!(meta.len(), esperado);
 
         // Y para un índice vacío: sólo cabecera.
         let t2 = TempFile::new("tamano_vacio");
         save(&Index::default(), t2.path()).unwrap();
-        assert_eq!(fs::metadata(t2.path()).unwrap().len(), HEADER_LEN as u64);
+        assert_eq!(
+            fs::metadata(t2.path()).unwrap().len(),
+            HEADER_LEN as u64 + 6 * 4
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 [package]
 name = "census-core"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 description = "Indice instantaneo de archivos para Windows (NTFS): lee la MFT y sigue el USN Journal"
@@ -48,6 +48,8 @@ windows-sys = { version = "0.59", features = [
 opt-level = 3
 lto = "thin"
 codegen-units = 1
+strip = true
+panic = "abort"
 
 [build-dependencies]
 winresource = "0.1.34"

@@ -40,25 +40,23 @@ Ronda de revisión de bugs y dependencias. Sin cambios de formato ni de protocol
 - Mensaje de capacidades `WM_USER + 402` y `flags` de la respuesta con **sólo los campos
   que vinieron** (`run_count` nunca se anuncia).
 
-## [Unreleased]
+## [0.2.0] - 2026-11-21
 
-### Agregado
+### Rendimiento
 
-- **Índices auxiliares**: CSR de hijos por carpeta (`children_of`) y orden
-  alfabético precalculado (`por_nombre` + `rango`). Ordenar por nombre pasa a
-  comparar dos `u32` en vez de cadenas, y listar una carpeta ya no recorre el
-  índice entero.
-- **Búsqueda por fragmentos con prioridad de nombre**, arena plegada sin
-  `fold()` en consulta, dos fases y escaneo en paralelo.
-- `census bench --root <dir>` para medir sin elevación.
-- `census elevate always|never|ask`: la app pide permisos una sola vez y lo
-  recuerda; con snapshot fresco no vuelve a preguntar.
-- Nube fuera de `index_all`: sólo metadata y sólo con `--include-cloud`.
+- **Snapshot `C.wcat` v2**: guarda los índices derivados (`folded`, `dir_bytes`,
+  `hijos`, `por_nombre`, `euler`). Cargar `C:` (1,64 M de nodos) pasó de ~0,9 s
+  a **240 ms**.
+- **Fase de carpetas por subárbol** (`euler`/`tin`/`tout`): buscar un término en
+  las carpetas ya no recorre el índice caminando padres.
+- **Orden por nombre precalculado** y orden en paralelo con fusión.
+- **Búsqueda incremental** al tipear: 3–7 ms por letra.
+- Checksum por palabras de 8 bytes, independiente de cómo se parta la entrada.
 
-### Corregido
+### Cambios
 
-- `parse_reply` no avanzaba al leer `run_count`.
-- Sin pausa: se sacaron `pause.json`, los comandos `pause`/`resume` y el botón.
+- Binario afinado: `strip` y `panic=abort` → **5,28 MB**.
+- Snapshot de `C:` con los índices completos: ~298 MB.
 
 ## [0.1.0] — 2026-11-21
 

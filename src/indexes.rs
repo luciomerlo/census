@@ -194,6 +194,53 @@ impl Index {
         out
     }
 
+    /// Reconstruye sólo lo barato a partir de los bloques ya persistidos:
+    /// `rango` desde `por_nombre`, y `tin`/`tout` desde `euler` + hijos.
+    /// Es lo que hace que cargar el snapshot cueste milisegundos.
+    pub fn rebuild_light(&mut self) {
+        let n = self.nodes.len();
+        let mut rango = vec![0u32; n];
+        for (pos, id) in self.por_nombre.iter().enumerate() {
+            if let Some(slot) = rango.get_mut(*id as usize) {
+                *slot = pos as u32;
+            }
+        }
+        self.rango = rango;
+
+        let mut tin = vec![u32::MAX; n];
+        for (pos, id) in self.euler.iter().enumerate() {
+            if let Some(slot) = tin.get_mut(*id as usize) {
+                *slot = pos as u32;
+            }
+        }
+        let mut tam = vec![1u32; n];
+        for pos in (0..self.euler.len()).rev() {
+            let i = self.euler[pos] as usize;
+            let desde = self.hijos_inicio.get(i).copied().unwrap_or(0) as usize;
+            let hasta = self.hijos_inicio.get(i + 1).copied().unwrap_or(0) as usize;
+            let mut suma = 1u32;
+            for &h in self.hijos.get(desde..hasta).unwrap_or(&[]) {
+                suma = suma.saturating_add(tam.get(h as usize).copied().unwrap_or(0));
+            }
+            if let Some(slot) = tam.get_mut(i) {
+                *slot = suma;
+            }
+        }
+        let tout: Vec<u32> = tin
+            .iter()
+            .enumerate()
+            .map(|(i, t)| {
+                if *t == u32::MAX {
+                    0
+                } else {
+                    (*t).saturating_add(tam[i]).min(self.euler.len() as u32)
+                }
+            })
+            .collect();
+        self.tin = tin;
+        self.tout = tout;
+    }
+
     /// Hijos directos de una carpeta, en el orden en que están en el índice.
     pub fn children_of(&self, id: u32) -> &[u32] {
         let i = id as usize;
