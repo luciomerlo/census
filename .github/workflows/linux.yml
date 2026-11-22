@@ -1,0 +1,70 @@
+name: Linux (x86_64 + ARM64)
+
+on:
+  push:
+    branches: [master, main, linux]
+    paths:
+      - "linux/**"
+      - ".github/workflows/linux.yml"
+  pull_request:
+    paths:
+      - "linux/**"
+      - ".github/workflows/linux.yml"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: linux
+
+      - name: Formato
+        run: cargo fmt --manifest-path linux/Cargo.toml -- --check
+
+      - name: Clippy (sin warnings)
+        run: cargo clippy --manifest-path linux/Cargo.toml --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --manifest-path linux/Cargo.toml
+
+      - name: Release
+        run: cargo build --manifest-path linux/Cargo.toml --release
+
+      - name: Empaquetar
+        run: |
+          VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' linux/Cargo.toml | head -1)"
+          BIN="census-$VERSION-linux-${{ matrix.arch }}"
+          mkdir -p dist
+          cp linux/target/release/census "dist/$BIN"
+          chmod +x "dist/$BIN"
+          tar -czf "dist/$BIN.tar.gz" -C dist "$BIN"
+          (cd dist && sha256sum "$BIN" "$BIN.tar.gz" > "$BIN.sha256")
+          file "dist/$BIN"
+          cat "dist/$BIN.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: census-linux-${{ matrix.arch }}
+          path: |
+            dist/census-*-linux-${{ matrix.arch }}
+            dist/census-*-linux-${{ matrix.arch }}.tar.gz
+            dist/census-*-linux-${{ matrix.arch }}.sha256
+          if-no-files-found: error
