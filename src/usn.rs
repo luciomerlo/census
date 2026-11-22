@@ -5,6 +5,9 @@
 //! o modificación, con el FRN del archivo, el FRN del padre, el nombre y el
 //! motivo. Se lee como un archivo: desde un USN hasta el actual.
 //!
+// `as_chunks` (lo que sugiere el lint) todavía es inestable en Rust estable.
+#![allow(clippy::chunks_exact_to_as_chunks)]
+//!
 //! Todo el FFI es puntual; el parseo de los registros está aislado en
 //! [`parse_records`] para poder probarlo con bytes sintéticos, sin tocar el
 //! disco ni pedir elevación.
