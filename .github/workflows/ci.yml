@@ -29,6 +29,43 @@ jobs:
       - name: Release
         run: cargo build --workspace --release
 
+
+  arm64:
+    # Windows on ARM: el mismo codigo, sin nada especifico de x86_64.
+    # Corre nativo en un runner ARM, no cross-compilado: asi se ejecutan los
+    # tests de verdad (MFT y USN se comportan igual en ARM64).
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Clippy arm64
+        run: cargo clippy --workspace --all-targets --target aarch64-pc-windows-msvc -- -D warnings
+
+      - name: Tests arm64
+        run: cargo test --workspace --target aarch64-pc-windows-msvc
+        env:
+          RUSTFLAGS: "-C overflow-checks=on"
+
+      - name: Release arm64
+        run: cargo build --workspace --release --target aarch64-pc-windows-msvc
+
+      - name: Empaquetar
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path Cargo.toml -Pattern '^version = "(.*)"').Matches[0].Groups[1].Value
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target/aarch64-pc-windows-msvc/release/census.exe "dist/census-$v-windows-arm64.exe"
+          Compress-Archive "dist/census-$v-windows-arm64.exe" "dist/census-$v-windows-arm64.zip" -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: census-windows-arm64
+          path: dist/*arm64*
+
   audit:
     # Avisos de seguridad (RUSTSEC) en las dependencias. Equivale a `cargo audit`,
     # que localmente no se puede instalar dentro del límite de tiempo del agente.
