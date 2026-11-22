@@ -96,6 +96,20 @@ l1:<generation>:<cambio_n>          Linux (fanotify no tiene orden durable)
 | macOS | `{ volume_uuid: [u8;16], ino: u64, gen: u32, btime_ns: i64 }` — con `ATTR_CMN_FILEID` + `ATTR_CMN_CRTIME`. `st_gen` puede ser 0 en APFS: **no se depende de él**, `btime` desempata |
 | Linux | `{ fs_uuid, ino: u64, btime_ns: i64 }` — `i_generation` de ext4 no es portable |
 
+**`FileKey` vs `FileId`** — son dos cosas distintas y el contrato las separa:
+
+```rust
+pub struct FileKey { pub volume_id: VolumeId, pub ino: u64, pub gen: u32 }
+pub struct FileId  { pub key: FileKey, pub btime_ns: i64 }
+```
+
+- **`FileKey`** es para *lookup del árbol*: es lo único que trae el padre
+  (`ATTR_CMN_PARENTID` no incluye `btime`).
+- **`FileId`** es para *identidad y Atlas*: agrega `btime_ns` para desempatar
+  reutilización de inodo.
+
+En Windows `FileKey = (volume_id, frn)` y `btime_ns` no existe (0).
+
 Casos especiales:
 
 - **Hardlinks** comparten inodo: se cuenta una vez y `nlink` dice cuántos nombres.
@@ -109,6 +123,14 @@ Casos especiales:
 | Windows | `vol_serial` (+ tamaño) — **es por volumen, no por disco físico** |
 | macOS | `hash(fs_uuid || fstype || total_size || volume_name)`; UUID de `ATTR_VOL_UUID`, fallback `statfs.f_fsid + size` |
 | Linux | `hash(fs_uuid || fstype || total_size)` de `statfs`/`blkid` |
+
+`volume_id` es **FNV-1a 64 en hex minúsculas** en las tres plataformas, sobre
+`fs_uuid || fstype || total_size`. Fallbacks acordados:
+
+- macOS: `ATTR_VOL_UUID` → `statfs.f_fsid + size` → `hash(volume_name + size)`.
+- Linux: `/dev/disk/by-uuid` (match por `source` canónico) → `blkid -s UUID -o value`
+  → `fsid`. Directorios sueltos (`--root`): `dir:<hostname>:<path>`.
+- Windows: `vol_serial` (lo da `GetVolumeInformationW`, ya implementado).
 
 `volume_id` es lo que usa Atlas. **Renombrado hecho** en `docs/ATLAS.md`
 (antes decía `disk_id`, que se confundía con disco físico: `C:` y `D:` en el
@@ -128,6 +150,35 @@ mismo SSD son volúmenes distintos).
      nombres a UTF-16LE (con reemplazo sólo si el nombre no era UTF-8 válido) y
      firma el snapshot. Así el hub parsea un solo formato y la eventual pérdida
      ocurre en el dueño, no en el hub.
+
+## 6 bis. Snapshots nativos y export
+
+- Cada crate puede tener su snapshot nativo (Linux: `.cns`, macOS: `.cnx`) con
+  bytes, multi-raíz, `pc_id`, `volume_id`, `Marca` y `content_hash`. El hub los
+  guarda **opacos**.
+- Para que el core Windows verifique y para offline entre plataformas existe
+  `census export --wcat`: produce un `C.wcat` v3 exacto (nombres UTF-16LE,
+  letras sintéticas) más un `manifest.json` al lado con:
+  `letter -> { root_path, volume_id, Marca, content_hash, platform }`.
+- **Las letras sintéticas tienen que ser estables**: derivadas de `volume_id`
+  (por ejemplo `A:`, `B:`, … según el orden de los `volume_id` ordenados), nunca
+  del orden de montaje. Si cambian entre exports, Atlas ve volúmenes distintos
+  en cada publicación.
+- La conversión a UTF-16 ocurre **en el dueño**; un nombre inválido se reemplaza
+  por U+FFFD al exportar, no antes.
+
+## 6 ter. Plegado de nombres (normativo)
+
+La tabla es la misma en las tres plataformas, para que un término con acento
+encuentre lo mismo en cualquiera:
+
+- ASCII `A-Z` → `a-z`.
+- Latin-1 `U+00C0..=U+00DE` **menos `U+00D7`** → `+0x20`.
+- Nada más: no se quitan acentos, no se tocan ligaduras, no se usa el
+  `to_lowercase` de Unicode.
+
+En Linux/macOS se aplica sobre los escalares UTF-8 preservando offsets; si el
+nombre no es UTF-8 válido, se pliega sólo ASCII y se marca `Encoding::Otro`.
 
 ## 7. Reglas de trabajo
 
