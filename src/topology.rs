@@ -856,10 +856,10 @@ impl Volumen {
             guid_disco: String::new(),
             disk_hw_id: String::new(),
             volume_id: String::new(),
-            estado: EstadoIdentidad::SinIdentidad,
+            estado: EstadoIdentidad::Ok,
             nota: Some(
-                "volumen de nube (§9): la identidad es cloud_id, no el hardware; \
-                 la letra es sólo presentación"
+                "volumen de nube (§9): la identidad es cloud_id, la letra es sólo \
+                 presentación y no se sondea el hardware del disco anfitrión"
                     .into(),
             ),
         }
