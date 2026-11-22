@@ -53,10 +53,16 @@ cargo build --release --target aarch64-apple-darwin
 
 # Universal2
 ./scripts/make-universal.sh
+
+# Apps .app para Intel, Apple Silicon y universal2
+# (firma ad-hoc; con MACOS_SIGN_IDENTITY usa Developer ID)
+./scripts/build-apps.sh
 ```
 
 El binario queda en `target/<target>/release/census` y, para universal2, en
-`dist/census-universal`.
+`dist/census-universal`. `build-apps.sh` deja `dist/Census-Intel.app`,
+`dist/Census-AppleSilicon.app`, `dist/Census-universal.app` y sus `.zip` con
+`SHA256SUMS.txt`.
 
 En Linux/Windows se puede verificar el código portable y el código macOS sin
 enlazar:

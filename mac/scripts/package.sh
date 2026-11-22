@@ -5,19 +5,33 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 ARCH="${1:-universal}"
-BIN="dist/census-universal"
-[ "$ARCH" = "x86_64" ] && BIN="dist/census-x86_64"
-[ "$ARCH" = "aarch64" ] && BIN="dist/census-aarch64"
-[ -x "$BIN" ] || { echo "falta $BIN; corré scripts/make-universal.sh o `--both`" >&2; exit 1; }
+case "$ARCH" in
+  universal) BIN="dist/census-universal" ;;
+  x86_64)    BIN="dist/census-x86_64" ;;
+  aarch64)   BIN="dist/census-aarch64" ;;
+  *)
+    echo "uso: $0 [universal|x86_64|aarch64]" >&2
+    exit 2
+    ;;
+esac
+# El CI puede pasar el binario ya compilado sin copiarlo a mac/dist.
+BIN="${CENSUS_BIN:-$BIN}"
+[ -x "$BIN" ] || { echo "falta $BIN; corré scripts/make-universal.sh o --both" >&2; exit 1; }
 
-APP="dist/Census.app"
+# Nombre distinto por arquitectura para no pisar una app con otra.
+APP_NAME="${CENSUS_APP_NAME:-Census}"
+APP="dist/$APP_NAME.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp packaging/Info.plist "$APP/Contents/Info.plist"
 cp "$BIN" "$APP/Contents/MacOS/census"
 chmod +x "$APP/Contents/MacOS/census"
-if [ -f assets/icon.icns ]; then
+if [ -f dist/icon.icns ]; then
+  cp dist/icon.icns "$APP/Contents/Resources/icon.icns"
+elif [ -f assets/icon.icns ]; then
   cp assets/icon.icns "$APP/Contents/Resources/icon.icns"
+elif [ -f ../assets/icon.icns ]; then
+  cp ../assets/icon.icns "$APP/Contents/Resources/icon.icns"
 fi
 
 if [ -n "${MACOS_SIGN_IDENTITY:-}" ]; then
@@ -31,3 +45,4 @@ else
 fi
 codesign --verify --deep --strict --verbose=2 "$APP"
 echo "listo: $APP"
+file "$APP/Contents/MacOS/census" 2>/dev/null || true

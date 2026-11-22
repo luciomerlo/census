@@ -27,9 +27,11 @@ jobs:
           - runner: macos-15-intel
             arch: x86_64
             target: x86_64-apple-darwin
+            app: Intel
           - runner: macos-15
             arch: aarch64
             target: aarch64-apple-darwin
+            app: AppleSilicon
     steps:
       - uses: actions/checkout@v4
       - name: Rust stable
@@ -45,16 +47,28 @@ jobs:
         run: cargo test --manifest-path mac/Cargo.toml --target "${{ matrix.target }}"
       - name: build release
         run: cargo build --manifest-path mac/Cargo.toml --release --target "${{ matrix.target }}"
-      - name: artifact
+      - name: app bundle
         run: |
           mkdir -p dist
           cp "mac/target/${{ matrix.target }}/release/census" "dist/census-${{ matrix.arch }}"
           chmod +x "dist/census-${{ matrix.arch }}"
-          file "dist/census-${{ matrix.arch }}"
+          cd mac
+          ./scripts/make-icon.sh
+          CENSUS_BIN="../dist/census-${{ matrix.arch }}" \
+            CENSUS_APP_NAME="Census-${{ matrix.app }}" \
+            ./scripts/package.sh "${{ matrix.arch }}"
+          ditto -c -k --sequesterRsrc --keepParent \
+            "dist/Census-${{ matrix.app }}.app" \
+            "dist/Census-${{ matrix.app }}.zip"
+          (cd dist && shasum -a 256 "Census-${{ matrix.app }}.zip" > "Census-${{ matrix.app }}.zip.sha256")
+          cp "dist/Census-${{ matrix.app }}.zip" "dist/Census-${{ matrix.app }}.zip.sha256" ../dist/
       - uses: actions/upload-artifact@v4
         with:
           name: census-macos-${{ matrix.arch }}
-          path: dist/census-${{ matrix.arch }}
+          path: |
+            dist/census-${{ matrix.arch }}
+            dist/Census-${{ matrix.app }}.zip
+            dist/Census-${{ matrix.app }}.zip.sha256
           if-no-files-found: error
 
   universal:
@@ -70,16 +84,27 @@ jobs:
           merge-multiple: true
       - name: lipo
         run: |
-          lipo -create dist/census-x86_64 dist/census-aarch64 -output dist/census-universal
-          chmod +x dist/census-universal
-          lipo -info dist/census-universal
-          codesign --force --sign - dist/census-universal
-          shasum -a 256 dist/census-* > dist/SHA256SUMS.txt
-          cat dist/SHA256SUMS.txt
+          mkdir -p mac/dist
+          lipo -create dist/census-x86_64 dist/census-aarch64 -output mac/dist/census-universal
+          chmod +x mac/dist/census-universal
+          cd mac
+          ./scripts/make-icon.sh
+          CENSUS_APP_NAME=Census-universal ./scripts/package.sh universal
+          ditto -c -k --sequesterRsrc --keepParent \
+            "dist/Census-universal.app" \
+            "dist/Census-universal.zip"
+          (cd dist && shasum -a 256 Census-universal.zip > Census-universal.zip.sha256)
+          cp dist/census-universal ../dist/
+          cp dist/Census-universal.zip ../dist/
+          cp dist/Census-universal.zip.sha256 ../dist/
+          (cd ../dist && shasum -a 256 census-universal Census-*.zip > SHA256SUMS.txt)
+          cat ../dist/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: census-macos-universal
           path: |
             dist/census-universal
+            dist/Census-universal.zip
+            dist/Census-universal.zip.sha256
             dist/SHA256SUMS.txt
           if-no-files-found: error
