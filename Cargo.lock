@@ -278,6 +278,7 @@ dependencies = [
  "census-ipc",
  "eframe",
  "jiff",
+ "memmap2",
  "mft",
  "serde_json",
  "ureq",

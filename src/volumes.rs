@@ -34,6 +34,20 @@ impl DriveKind {
             DriveKind::Unknown => "?",
         }
     }
+
+    /// Código estable en ASCII para el JSON que consumen Wiz, Sort y Atlas.
+    /// `label()` es para mostrar; esto es para máquinas.
+    pub fn code(&self) -> &'static str {
+        match self {
+            DriveKind::Fixed => "fixed",
+            DriveKind::Removable => "removable",
+            DriveKind::Remote => "remote",
+            DriveKind::Cloud => "cloud",
+            DriveKind::Cdrom => "cdrom",
+            DriveKind::Ram => "ram",
+            DriveKind::Unknown => "unknown",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -46,6 +60,12 @@ pub struct Drive {
     pub label: String,
     pub total: u64,
     pub free: u64,
+    /// Número de serie del volumen (`GetVolumeInformationW`). No es la letra:
+    /// dos montajes que lo comparten con el mismo tamaño son virtuales (§9).
+    pub serial: u64,
+    /// Montaje virtual detectado por compartir serie y tamaño con otro volumen
+    /// (Google Drive monta un FAT32 falso del tamaño del disco anfitrión).
+    pub nube_virtual: bool,
 }
 
 /// Etiquetas que delatan una unidad montada por un cliente de nube.
@@ -65,6 +85,9 @@ impl Drive {
     /// WizTree separa las unidades de nube del resto; Windows no las distingue,
     /// así que la etiqueta del volumen es la única pista disponible.
     pub fn is_cloud(&self) -> bool {
+        if self.nube_virtual {
+            return true;
+        }
         let label = self.label.to_lowercase();
         if CLOUD_LABELS.iter().any(|k| label.contains(k)) {
             return true;
@@ -108,6 +131,304 @@ impl Drive {
     pub fn is_ntfs(&self) -> bool {
         self.fs.eq_ignore_ascii_case("NTFS")
     }
+}
+
+/// Un volumen de nube montado por un cliente (Google Drive, OneDrive, rclone...).
+///
+/// §9: `cloud_id = hash(provider || cuenta || unidad)`. **La letra no entra**: el
+/// mismo drive compartido montado en `G:` por Google Drive, en `H:` por rclone y
+/// en `/mnt/rclone` por Linux es **un** volumen para Atlas.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CloudId {
+    /// `gdrive`, `onedrive`, `dropbox`... (normalizado, igual en las 3 plataformas).
+    pub provider: String,
+    /// Correo de la etiqueta, o `desconocida:<letra>` si no se pudo atribuir.
+    pub account: String,
+    /// `my-drive` o el nombre del drive compartido.
+    pub unit: String,
+    /// FNV-1a 64 en hex minúsculas, 16 dígitos, sin prefijo.
+    pub id: String,
+    /// La cuenta no se pudo atribuir: se avisa y **no** se fusiona sola (§9.2).
+    pub posible_duplicado: bool,
+    pub nota: Option<String>,
+}
+
+/// Proveedor canónico de Google Drive, el mismo que usan Mac y Linux.
+pub const PROVIDER_GDRIVE: &str = "gdrive";
+/// Unidad por defecto: "Mi unidad" / "My Drive" se normaliza a esto.
+pub const UNIDAD_MI_DRIVE: &str = "my-drive";
+
+/// Proveedor normalizado. Acepta los alias que aparecen en etiquetas, en
+/// nombres de filesystem y en `rclone`, para que el hash coincida entre PCs.
+pub fn normalizar_provider(p: &str) -> String {
+    let low = p.trim().to_ascii_lowercase();
+    match low.as_str() {
+        "gdrive" | "google" | "google-drive" | "googledrive" | "gdfuse" | "google drive"
+        | "google-drive-ocamlfuse" => PROVIDER_GDRIVE.to_string(),
+        "onedrive" | "one-drive" | "one drive" => "onedrive".to_string(),
+        "dropbox" => "dropbox".to_string(),
+        "icloud" | "icloud drive" | "icloud-drive" => "icloud".to_string(),
+        "" => "unknown".to_string(),
+        otro => otro.to_string(),
+    }
+}
+
+/// Cuenta normalizada para el hash: minúsculas y sin el nombre del proveedor
+/// pegado por algunas etiquetas (`GoogleDrive-cuenta@x`).
+pub fn normalizar_account(a: &str) -> String {
+    let mut a = a.trim().to_ascii_lowercase();
+    for prefijo in [
+        "googledrive-",
+        "google drive - ",
+        "onedrive-",
+        "one drive - ",
+        "dropbox-",
+        "dropbox - ",
+    ] {
+        if let Some(resto) = a.strip_prefix(prefijo) {
+            a = resto.trim().to_string();
+            break;
+        }
+    }
+    for sufijo in [
+        " - google drive",
+        " - onedrive",
+        " - one drive",
+        " - dropbox",
+    ] {
+        if let Some(resto) = a.strip_suffix(sufijo) {
+            a = resto.trim().to_string();
+            break;
+        }
+    }
+    a
+}
+
+/// Unidad normalizada: `Mi unidad` y `My Drive` son la misma (`my-drive`).
+pub fn normalizar_unit(u: &str) -> String {
+    let u = u.trim().to_ascii_lowercase().replace('\\', "/");
+    let u = u.trim_matches('/');
+    let u = u
+        .strip_prefix("shared drives/")
+        .or_else(|| u.strip_prefix("drives compartidos/"))
+        .unwrap_or(u);
+    let u = u.split_whitespace().collect::<Vec<_>>().join(" ");
+    match u.as_str() {
+        "my drive" | "mi unidad" | "onedrive" | "dropbox" => UNIDAD_MI_DRIVE.to_string(),
+        otro => otro.to_string(),
+    }
+}
+
+/// Hash normativo de nube (§9.1): FNV-1a 64 sobre `provider\0cuenta\0unidad`,
+/// hex minúsculas de 16 dígitos y sin prefijo. El separador NUL evita que
+/// `("a", "bc")` y `("ab", "c")` den lo mismo.
+///
+/// Vector compartido con Mac y Linux:
+/// `("gdrive", "alice@gmail.com", "my-drive") -> 28590f656b6fe252`.
+pub fn cloud_hash(provider: &str, account: &str, unit: &str) -> String {
+    let p = normalizar_provider(provider);
+    let a = normalizar_account(account);
+    let u = normalizar_unit(unit);
+    let h = crate::topology::fnv1a64(&[p.as_bytes(), &[0], a.as_bytes(), &[0], u.as_bytes()]);
+    format!("{h:016x}")
+}
+
+/// Alias del contrato: `cloud_id = hash(provider || account || unidad)`.
+pub fn cloud_id(provider: &str, account: &str, unit: &str) -> String {
+    cloud_hash(provider, account, unit)
+}
+
+/// Proveedor por palabras de la etiqueta o del filesystem.
+fn proveedor_por_texto(texto: &str) -> Option<&'static str> {
+    let t = texto.to_lowercase();
+    if t.contains("google drive") || t.contains("googledrive") || t.contains("gdrive") {
+        return Some(PROVIDER_GDRIVE);
+    }
+    let pista = t.contains("onedrive")
+        || t.contains("one drive")
+        || t.contains("dropbox")
+        || t.contains("icloud")
+        || t.contains("pcloud")
+        || t.contains("nextcloud")
+        || t.contains("sharepoint")
+        || t.contains("mega");
+    if !pista {
+        return None;
+    }
+    CLOUD_LABELS
+        .iter()
+        .find(|k| t.contains(**k))
+        .map(|k| match *k {
+            "google drive" => PROVIDER_GDRIVE,
+            "onedrive" => "onedrive",
+            "dropbox" => "dropbox",
+            "icloud" => "icloud",
+            "pcloud" => "pcloud",
+            "mega" => "mega",
+            "box" => "box",
+            "nextcloud" => "nextcloud",
+            _ => "sharepoint",
+        })
+}
+
+/// ¿El resto de la etiqueta es el nombre del proveedor, posiblemente truncado?
+/// Windows corta la etiqueta en 32 caracteres y Google Drive deja
+/// `lucio@dominio - G...`: el resto es un prefijo del nombre del proveedor.
+fn es_resto_del_proveedor(resto: &str) -> bool {
+    let mut r = resto.trim().to_lowercase();
+    while r.ends_with('.') || r.ends_with('…') {
+        r.pop();
+        r = r.trim_end().to_string();
+    }
+    if r.is_empty() {
+        return true;
+    }
+    let sin_espacios = |s: &str| s.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+    let r = sin_espacios(&r);
+    [
+        "google drive",
+        "googledrive",
+        "gdrive",
+        "onedrive",
+        "dropbox",
+        "icloud drive",
+        "sharepoint",
+    ]
+    .iter()
+    .any(|nombre| sin_espacios(nombre).starts_with(&r))
+}
+
+/// Saca el nombre del proveedor que algunas etiquetas anteponen a la cuenta.
+fn limpiar_cuenta(cuenta: &str) -> String {
+    let mut c = cuenta.trim().to_string();
+    let bajo = c.to_ascii_lowercase();
+    for prefijo in [
+        "googledrive-",
+        "google drive - ",
+        "google drive (",
+        "onedrive-",
+        "dropbox-",
+    ] {
+        if bajo.starts_with(prefijo) {
+            c = c[prefijo.len()..].trim().to_string();
+            break;
+        }
+    }
+    let c = c.trim().trim_end_matches(')').trim().to_string();
+    if es_resto_del_proveedor(&c) {
+        // La etiqueta sólo dice "Google Drive": no hay cuenta que atribuir.
+        return String::new();
+    }
+    c
+}
+
+/// Parsea la etiqueta del volumen (§9.1). Devuelve `(provider, cuenta, unidad)`
+/// o `None` si no se puede atribuir la cuenta: en ese caso el llamador marca
+/// `posible_duplicado` y **no** inventa un id que parezca bueno.
+///
+/// Formatos reales en esta máquina:
+/// - `lucio@gruporiccitelli.com - Google Drive`
+/// - `luciomerlo@gmail.com - Google...` (Windows corta en 32 caracteres)
+/// - `Google Drive` (sin cuenta)
+/// - `E:` (no es nube)
+pub fn parse_cloud_label(label: &str) -> Option<(String, String, String)> {
+    let l = label.trim();
+    if l.is_empty() {
+        return None;
+    }
+    let (izq, der) = match l.split_once(" - ") {
+        Some((a, b)) => (a.trim(), Some(b.trim())),
+        None => (l, None),
+    };
+    let mut proveedor = proveedor_por_texto(l);
+    if proveedor.is_none() {
+        // Etiqueta truncada: `cuenta@dominio - G...`.
+        if let Some(der) = der {
+            if izq.contains('@') && es_resto_del_proveedor(der) {
+                proveedor = Some(PROVIDER_GDRIVE);
+            }
+        }
+    }
+    let proveedor = proveedor?;
+    let cuenta = limpiar_cuenta(izq);
+    if cuenta.is_empty() {
+        return None;
+    }
+    let unidad = match der {
+        Some(der) if !es_resto_del_proveedor(der) => der.to_string(),
+        _ => UNIDAD_MI_DRIVE.to_string(),
+    };
+    Some((proveedor.to_string(), cuenta, unidad))
+}
+
+/// Volúmenes virtuales de nube detectados por cómo se montan, no por la letra.
+///
+/// Google Drive para escritorio monta un FAT32 falso del tamaño del disco
+/// anfitrión y **con la misma serie de volumen en todos sus montajes**
+/// (comprobado en esta máquina: `G:` y `H:` comparten serie y tamaño). Un
+/// filesystem real no repite serie entre volúmenes distintos, así que dos
+/// volúmenes FAT32 con la misma serie y el mismo tamaño son montajes virtuales.
+/// Es sólo una detección: la identidad sigue saliendo de la etiqueta, y si no
+/// alcanza queda `desconocida:<letra>` + `posible_duplicado`.
+pub fn marcar_nube_por_virtualizacion(drives: &mut [Drive]) {
+    const UN_GIB: u64 = 1024 * 1024 * 1024;
+    let mut grupos: Vec<(u64, u64, Vec<usize>)> = Vec::new();
+    for (i, d) in drives.iter().enumerate() {
+        if d.serial == 0 || d.total < UN_GIB || !d.fs.eq_ignore_ascii_case("FAT32") {
+            continue;
+        }
+        match grupos
+            .iter_mut()
+            .find(|(serial, total, _)| *serial == d.serial && *total == d.total)
+        {
+            Some((_, _, indices)) => indices.push(i),
+            None => grupos.push((d.serial, d.total, vec![i])),
+        }
+    }
+    for (_, _, indices) in grupos {
+        if indices.len() >= 2 {
+            for i in indices {
+                if let Some(d) = drives.get_mut(i) {
+                    d.nube_virtual = true;
+                }
+            }
+        }
+    }
+}
+
+/// Identidad de nube de una unidad, o `None` si no parece nube.
+pub fn nube_de(d: &Drive) -> Option<CloudId> {
+    if !d.is_cloud() {
+        return None;
+    }
+    if let Some((provider, account, unit)) = parse_cloud_label(&d.label) {
+        let id = cloud_id(&provider, &account, &unit);
+        return Some(CloudId {
+            provider,
+            account,
+            unit,
+            id,
+            posible_duplicado: false,
+            nota: None,
+        });
+    }
+    let provider = proveedor_por_texto(&d.label)
+        .unwrap_or(PROVIDER_GDRIVE)
+        .to_string();
+    let account = format!("desconocida:{}", d.letter());
+    let unit = UNIDAD_MI_DRIVE.to_string();
+    let id = cloud_id(&provider, &account, &unit);
+    Some(CloudId {
+        provider,
+        account,
+        unit,
+        id: id.clone(),
+        posible_duplicado: true,
+        nota: Some(
+            "la etiqueta no alcanza para atribuir la cuenta: se marca posible duplicado y no se fusiona sola (§9.2)"
+                .into(),
+        ),
+    })
 }
 
 fn settings_path_for(app: &str) -> Option<PathBuf> {
@@ -218,12 +539,13 @@ mod imp {
 
             let mut label_buf = [0u16; 64];
             let mut fs_buf = [0u16; 32];
+            let mut serial: u32 = 0;
             let ok = unsafe {
                 GetVolumeInformationW(
                     root.as_ptr(),
                     label_buf.as_mut_ptr(),
                     label_buf.len() as u32,
-                    std::ptr::null_mut(),
+                    &mut serial,
                     std::ptr::null_mut(),
                     std::ptr::null_mut(),
                     fs_buf.as_mut_ptr(),
@@ -253,8 +575,11 @@ mod imp {
                 label,
                 total,
                 free,
+                serial: serial as u64,
+                nube_virtual: false,
             });
         }
+        marcar_nube_por_virtualizacion(&mut out);
         out
     }
 }
@@ -274,6 +599,8 @@ mod imp {
             label: String::new(),
             total: 0,
             free: 0,
+            serial: 0,
+            nube_virtual: false,
         }]
     }
 }
@@ -406,6 +733,8 @@ mod tests {
             label: label.into(),
             total: 0,
             free: 0,
+            serial: 0,
+            nube_virtual: false,
         };
         assert!(d("C:", "NTFS", DriveKind::Fixed, "").is_ntfs());
         assert!(!d("E:", "exFAT", DriveKind::Removable, "").is_ntfs());
@@ -435,6 +764,135 @@ mod tests {
         for d in &drives {
             assert_eq!(d.name.len(), 2, "nombre raro: {}", d.name);
             assert!(d.name.ends_with(':'));
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Nube (§9): etiquetas reales de esta máquina
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn parsea_la_etiqueta_completa_de_google_drive() {
+        // Etiqueta real de `G:` en esta máquina.
+        let (provider, account, unit) =
+            parse_cloud_label("lucio@gruporiccitelli.com - Google Drive").expect("debe parsear");
+        assert_eq!(provider, PROVIDER_GDRIVE);
+        assert_eq!(account, "lucio@gruporiccitelli.com");
+        assert_eq!(unit, UNIDAD_MI_DRIVE);
+
+        // Etiqueta real de `H:`: Windows la corta en 32 caracteres.
+        let (provider, account, unit) =
+            parse_cloud_label("luciomerlo@gmail.com - Google...").expect("debe parsear");
+        assert_eq!(provider, PROVIDER_GDRIVE);
+        assert_eq!(account, "luciomerlo@gmail.com");
+        assert_eq!(unit, UNIDAD_MI_DRIVE);
+
+        // La etiqueta de `G:` tal como la ve Census hoy (`- G...`).
+        let (_, account, unit) =
+            parse_cloud_label("lucio@gruporiccitelli.com - G...").expect("debe parsear");
+        assert_eq!(account, "lucio@gruporiccitelli.com");
+        assert_eq!(unit, UNIDAD_MI_DRIVE);
+    }
+
+    #[test]
+    fn etiqueta_sin_cuenta_no_inventa_identidad() {
+        // "Google Drive" a secas no dice qué cuenta es.
+        assert_eq!(parse_cloud_label("Google Drive"), None);
+        assert_eq!(parse_cloud_label("google drive"), None);
+        assert_eq!(parse_cloud_label(""), None);
+        // Una letra sola no es una etiqueta de nube.
+        assert_eq!(parse_cloud_label("E:"), None);
+        assert_eq!(parse_cloud_label("Disco local"), None);
+    }
+
+    #[test]
+    fn cloud_id_usa_el_vector_compartido_con_mac_y_linux() {
+        // Vector normativo del contrato entre plataformas: FNV-1a 64 sobre
+        // `provider\0cuenta\0unidad`, hex minúsculas de 16 dígitos.
+        assert_eq!(
+            cloud_id("gdrive", "alice@gmail.com", "my-drive"),
+            "28590f656b6fe252"
+        );
+        // Los alias del proveedor y de la unidad no cambian el id.
+        assert_eq!(
+            cloud_id("google-drive", "Alice@Gmail.com", "Mi unidad"),
+            cloud_id("gdrive", "alice@gmail.com", "my-drive")
+        );
+        // La letra de unidad no entra: el mismo drive en G: o H: es el mismo.
+        let g = nube_de(&drive("G:", "lucio@gruporiccitelli.com - G...")).expect("G: es nube");
+        let h = nube_de(&drive("H:", "lucio@gruporiccitelli.com - Google Drive"))
+            .expect("H: es nube");
+        assert_eq!(g.id, h.id, "la letra no puede cambiar el cloud_id");
+        assert_eq!(h.id, "2680377977155f73");
+    }
+
+    #[test]
+    fn nube_sin_cuenta_queda_desconocida_y_marcada() {
+        let g = nube_de(&drive("G:", "Google Drive")).expect("es nube por la etiqueta");
+        assert_eq!(g.provider, PROVIDER_GDRIVE);
+        assert_eq!(g.account, "desconocida:G");
+        assert!(g.posible_duplicado);
+        assert!(g.nota.is_some());
+        // Nunca se inventa un id que parezca bueno: difiere del atribuido y de
+        // otra letra desconocida, así no se fusionan dos montajes sin cuenta.
+        let h = nube_de(&drive("H:", "Google Drive")).expect("es nube");
+        assert_ne!(g.id, h.id);
+        assert_ne!(g.id, cloud_id("gdrive", "alice@gmail.com", "my-drive"));
+    }
+
+    #[test]
+    fn una_unidad_normal_no_es_nube() {
+        assert!(nube_de(&drive("C:", "")).is_none());
+        assert!(nube_de(&drive("E:", "Backup Seagate")).is_none());
+        assert!(nube_de(&drive("D:", "Google Drive")).is_some());
+        // OneDrive también se detecta, con su propio provider.
+        let od = nube_de(&drive("I:", "lucio@empresa.com - OneDrive")).expect("es nube");
+        assert_eq!(od.provider, "onedrive");
+        assert_eq!(od.account, "lucio@empresa.com");
+    }
+
+    #[test]
+    fn drive_virtual_por_compartir_serie_y_tamano() {
+        // Comprobado en esta máquina: G: y H: (Google Drive) comparten la serie
+        // 428019990 y el tamaño del disco anfitrión. Es un FAT32 virtual.
+        let mut drives = vec![
+            drive_fat32("C:", "", 912_056_151, 254_854_295_552),
+            drive_fat32("G:", "lucio@gruporiccitelli.com - G...", 428_019_990, 254_854_295_552),
+            drive_fat32("H:", "luciomerlo@gmail.com - Google...", 428_019_990, 254_854_295_552),
+            drive_fat32("E:", "USB DISK", 123_456_789, 254_854_295_552),
+        ];
+        marcar_nube_por_virtualizacion(&mut drives);
+        assert!(!drives[0].nube_virtual, "C: no comparte serie con nadie");
+        assert!(drives[1].nube_virtual, "G: y H: comparten serie y tamaño");
+        assert!(drives[2].nube_virtual);
+        assert!(!drives[3].nube_virtual, "una serie única no es virtual");
+        assert_eq!(drives[1].kind(), DriveKind::Cloud);
+        assert!(!drives[1].is_indexable());
+    }
+
+    fn drive(name: &str, label: &str) -> Drive {
+        Drive {
+            name: name.into(),
+            base_kind: DriveKind::Fixed,
+            fs: "FAT32".into(),
+            label: label.into(),
+            total: 254_854_295_552,
+            free: 0,
+            serial: 428_019_990,
+            nube_virtual: false,
+        }
+    }
+
+    fn drive_fat32(name: &str, label: &str, serial: u64, total: u64) -> Drive {
+        Drive {
+            name: name.into(),
+            base_kind: DriveKind::Fixed,
+            fs: "FAT32".into(),
+            label: label.into(),
+            total,
+            free: 0,
+            serial,
+            nube_virtual: false,
         }
     }
 }

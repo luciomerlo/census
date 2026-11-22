@@ -25,6 +25,8 @@ gui = ["dep:eframe"]
 census-ipc = { path = "crates/census-ipc" }
 mft = "0.10"
 jiff = "0.2"
+# Mapea `C.wcat` en sólo lectura: las arenas de nombres no se copian.
+memmap2 = "0.9"
 serde_json = "1"
 ureq = { version = "2.12", default-features = false, features = ["native-tls", "json"] }
 eframe = { version = "0.31", optional = true, default-features = false, features = ["default_fonts", "glow"] }

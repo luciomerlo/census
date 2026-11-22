@@ -1,8 +1,16 @@
 //! Índice en memoria: nodos planos + arena de nombres UTF-16.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::source::RawRecord;
+
+// `src/mmap.rs` vive al lado de este archivo. Se declara acá (y no en
+// `lib.rs`) para que el cambio quede acotado a los archivos del mapeo.
+#[path = "mmap.rs"]
+pub mod mmap;
+
+pub use mmap::Mapa;
 
 pub const F_DIR: u16 = 0x1;
 pub const F_ROOT: u16 = 0x2;
@@ -87,7 +95,7 @@ pub struct Compacto {
     pub parent: u32,
 }
 
-/// Arena de valores: propia o prestada de un archivo mapeado.
+/// Arenas de valores: propia, prestada de un mapa, o vacía.
 ///
 /// El snapshot se mapea en memoria y las dos arenas grandes (`names` y
 /// `folded`, 156 MB juntas) se leen directo del mapa: no se copian. El resto
@@ -103,13 +111,16 @@ pub enum Datos<T: Copy> {
 
 /// # Safety
 /// `Datos` sólo se usa dentro de `Arena`, que garantiza que el puntero sigue
-/// vivo: o apunta a un `Vec` que la arena posee, o a un mapa que se filtra a
-/// propósito para que dure lo que el proceso.
+/// vivo: o apunta a un `Vec` que la arena posee, o a un mapa que la arena
+/// retiene con un `Arc` (ver `duenio`).
 #[derive(Debug)]
 pub struct Arena<T: Copy> {
     datos: Datos<T>,
     /// `Vec` dueño cuando la arena es propia.
     propio: Option<Vec<T>>,
+    /// Dueño del mapa cuando la arena es prestada: el `Arc` impide que la
+    /// memoria mapeada se libere mientras viva el índice.
+    duenio: Option<Arc<Mapa>>,
 }
 
 impl<T: Copy> Default for Arena<T> {
@@ -117,6 +128,7 @@ impl<T: Copy> Default for Arena<T> {
         Arena {
             datos: Datos::Vacio,
             propio: None,
+            duenio: None,
         }
     }
 }
@@ -126,17 +138,29 @@ impl<T: Copy> Arena<T> {
         Arena {
             datos: Datos::Vacio,
             propio: Some(v),
+            duenio: None,
         }
     }
 
-    /// Arena prestada del mapa. El mapa tiene que vivir más que el índice
-    /// (se filtra a propósito al cargar el snapshot).
+    /// Arena prestada de memoria estática (no retiene dueño). Se mantiene por
+    /// compatibilidad; para el snapshot se usa `mapeado`.
     pub fn prestado(slice: &'static [T]) -> Self {
-        Arena {
-            datos: Datos::Vacio,
-            propio: None,
-        }
-        .con(slice)
+        Arena::default().con(slice)
+    }
+
+    /// Arena prestada de un archivo mapeado.
+    ///
+    /// Retiene el `Arc<Mapa>` que originó `slice`: mientras la arena viva, el
+    /// mapa (y por lo tanto la vista) también.
+    pub fn mapeado(duenio: Arc<Mapa>, slice: &'static [T]) -> Self {
+        let mut arena = Arena::default().con(slice);
+        arena.duenio = Some(duenio);
+        arena
+    }
+
+    /// `true` si los datos vienen de un mapa en vez de un `Vec` propio.
+    pub fn es_mapeada(&self) -> bool {
+        self.duenio.is_some()
     }
 
     fn con(mut self, slice: &'static [T]) -> Self {
@@ -150,8 +174,9 @@ impl<T: Copy> Arena<T> {
         }
         match self.datos {
             Datos::Mapeado(p, n) | Datos::Propio(p, n) if !p.is_null() => {
-                // SAFETY: el puntero viene de un `Vec` propio o de un mapa
-                // filtrado; `n` es su largo exacto.
+                // SAFETY: el puntero viene de un `Vec` propio o de un mapa que
+                // la arena retiene en `duenio`; `n` es su largo exacto y el
+                // contenido es de sólo lectura.
                 unsafe { std::slice::from_raw_parts(p, n) }
             }
             _ => &[],
