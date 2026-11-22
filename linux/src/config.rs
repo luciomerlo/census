@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::cloud::CloudOverride;
 
 fn d_port() -> u16 {
-    8478
+    8787
 }
 fn d_bind() -> String {
     "auto".into()

@@ -31,6 +31,7 @@ pub fn from_secs(s: i64) -> i64 {
 }
 
 /// Fecha civil (Howard Hinnant) a dias desde 1970-01-01.
+#[allow(dead_code)]
 fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
     let era = if y >= 0 { y } else { y - 399 } / 400;
@@ -73,6 +74,7 @@ mod local {
     use std::mem::MaybeUninit;
 
     pub fn tm_of(ns: i64) -> libc::tm {
+        #[allow(deprecated)]
         let t = secs(ns) as libc::time_t;
         let mut tm = MaybeUninit::<libc::tm>::uninit();
         unsafe {
@@ -116,7 +118,7 @@ mod local {
     }
 
     pub fn parse_local(y: i64, mo: u32, d: u32, h: u32, mi: u32, se: u32) -> Option<i64> {
-        let mut tm = MaybeUninit::<libc::tm>::zeroed();
+        let tm = MaybeUninit::<libc::tm>::zeroed();
         let mut tm = unsafe { tm.assume_init() };
         tm.tm_year = (y - 1900) as libc::c_int;
         tm.tm_mon = (mo as i32 - 1) as libc::c_int;
@@ -184,7 +186,7 @@ pub fn parse_when(raw: &str) -> Option<i64> {
         return Some(now_ns());
     }
     if let Some(epoch) = s.strip_prefix('@') {
-        return epoch.parse::<i64>().ok().map(|v| from_secs(v));
+        return epoch.parse::<i64>().ok().map(from_secs);
     }
     // Relativo: 7d, 12h, 30m, 2w, 45s.
     if let Some(rest) = s.strip_suffix(['d', 'D', 'h', 'H', 'm', 'M', 'w', 'W', 's', 'S']) {

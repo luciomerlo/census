@@ -14,7 +14,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::cloud::{self, CloudContext, CloudId};
-use crate::plataforma::volume_id;
+use crate::diskid::{self, DiskIdentity, IdentityStatus};
 
 #[derive(Clone, Debug, Default)]
 pub struct Mount {
@@ -31,6 +31,17 @@ pub struct Mount {
     /// Campo `root` de mountinfo (subvolumen en btrfs).
     pub subvol: String,
     pub dev: u64,
+    // Identidad de hardware: no depende del punto de montaje.
+    pub disk_hw_id: String,
+    pub serial: String,
+    pub vendor: String,
+    pub model: String,
+    pub wwn: String,
+    pub capacity: u64,
+    pub partition_offset: u64,
+    pub partition_size: u64,
+    pub identity_status: String,
+    pub federable: bool,
     // Identidad de nube.
     pub cloud_id: String,
     pub cloud_provider: String,
@@ -82,11 +93,17 @@ impl Mount {
             "cloud:{}:{}:{}",
             self.cloud_provider, self.cloud_account, self.cloud_unit
         );
+        self.identity_status = "cloud".into();
+        // v1 no federa nube aunque este atribuida.
+        self.federable = false;
+        self.capacity = self.total;
+        self.partition_offset = 0;
+        self.partition_size = self.total;
         self.volume_id = if attributed {
             cloud_id.to_string()
         } else {
             // Un desconocido no se fusiona con otro: id por camino.
-            volume_id(&format!("cloud:{}", self.path), &self.fs, self.total)
+            diskid::volume_id("", 0, &self.fs_uuid)
         };
     }
 }
@@ -247,6 +264,8 @@ fn classify(fs: &str, removable: bool) -> &'static str {
 fn parse_mountinfo(text: &str, ctx: &CloudContext) -> Vec<Mount> {
     let devs = device_index();
     let mut out: Vec<Mount> = Vec::new();
+    // Identidad alineada con `out` para resolver seriales ambiguas al final.
+    let mut identities: Vec<DiskIdentity> = Vec::new();
     let mut seen: HashMap<String, usize> = HashMap::new();
     for line in text.lines() {
         let Some((pre, post)) = line.split_once(" - ") else {
@@ -275,21 +294,28 @@ fn parse_mountinfo(text: &str, ctx: &CloudContext) -> Vec<Mount> {
         let removable = is_removable(major, minor);
         let mut kind = classify(&fs, removable).to_string();
         let canon = fs::canonicalize(&source).unwrap_or_else(|_| PathBuf::from(&source));
-        let (fs_uuid, label) = devs
+        let (raw_uuid, label) = devs
             .get(&canon)
             .cloned()
             .unwrap_or_else(|| (String::new(), String::new()));
+        let has_real_uuid = !raw_uuid.is_empty();
         let (total, free) = statvfs(Path::new(&mount_point)).unwrap_or((0, 0));
-        let fs_uuid = if fs_uuid.is_empty() {
+        let fs_uuid = if !has_real_uuid {
             if kind == "network" || kind == "cloud" {
                 format!("{kind}:{source}")
             } else {
                 format!("fsid:{major}:{minor}")
             }
         } else {
-            fs_uuid
+            raw_uuid
         };
-        let vol = volume_id(&fs_uuid, &fs, total);
+        let mut ident = diskid::identify(major, minor, &fs_uuid);
+        // `fsid:major:minor` no es estable entre PCs: sin hardware ni UUID real
+        // el volumen queda fuera de federacion, pero se puede consultar local.
+        if !has_real_uuid && ident.disk_hw_id.is_empty() {
+            ident.status = IdentityStatus::SinIdentidad;
+        }
+        let vol = diskid::volume_id(&ident.disk_hw_id, ident.partition_offset, &fs_uuid);
         let mut m = Mount {
             path: mount_point,
             source,
@@ -303,6 +329,16 @@ fn parse_mountinfo(text: &str, ctx: &CloudContext) -> Vec<Mount> {
             removable,
             subvol: unescape(p[3]),
             dev,
+            disk_hw_id: ident.disk_hw_id.clone(),
+            serial: ident.serial.clone(),
+            vendor: ident.vendor.clone(),
+            model: ident.model.clone(),
+            wwn: ident.wwn.clone(),
+            capacity: ident.capacity,
+            partition_offset: ident.partition_offset,
+            partition_size: ident.partition_size,
+            identity_status: ident.status.label().into(),
+            federable: ident.status.federable() && kind != "network",
             ..Default::default()
         };
         if let Some(id) = cloud::identify(ctx, &fs, &m.source, &m.path, super_opts) {
@@ -316,9 +352,49 @@ fn parse_mountinfo(text: &str, ctx: &CloudContext) -> Vec<Mount> {
         }
         if let Some(&i) = seen.get(&m.path) {
             out[i] = m;
+            identities[i] = ident;
         } else {
             seen.insert(m.path.clone(), out.len());
             out.push(m);
+            identities.push(ident);
+        }
+    }
+
+    // Un puente USB puede repetir la serial de dos discos distintos. Se marca
+    // y se agrega capacidad/modelo/particion al hash; nunca se fusionan.
+    diskid::mark_ambiguous(&mut identities);
+    for (m, ident) in out.iter_mut().zip(identities.iter_mut()) {
+        if m.kind == "cloud" {
+            if m.cloud_id.is_empty() {
+                m.federable = false;
+                m.identity_status = "posible_duplicado".into();
+            }
+            continue;
+        }
+        diskid::disambiguate(ident, m.partition_offset);
+        m.disk_hw_id = ident.disk_hw_id.clone();
+        m.identity_status = ident.status.label().into();
+        m.federable = ident.status == IdentityStatus::Ok && m.kind != "network";
+        m.possible_duplicate |= ident.status == IdentityStatus::PosibleDuplicado;
+        m.volume_id = diskid::volume_id(&m.disk_hw_id, m.partition_offset, &m.fs_uuid);
+    }
+
+    // Dos discos clonados pueden compartir UUID y offset pero no hardware:
+    // misma clave, hardware distinto => posible duplicado, no fusion silenciosa.
+    let mut owner: HashMap<String, (String, usize)> = HashMap::new();
+    for i in 0..out.len() {
+        let key = out[i].key().to_string();
+        if let Some((hw, j)) = owner.get(&key) {
+            if !hw.is_empty() && !out[i].disk_hw_id.is_empty() && *hw != out[i].disk_hw_id {
+                out[i].possible_duplicate = true;
+                out[*j].possible_duplicate = true;
+                out[i].identity_status = "posible_duplicado".into();
+                out[*j].identity_status = "posible_duplicado".into();
+                out[i].federable = false;
+                out[*j].federable = false;
+            }
+        } else {
+            owner.insert(key, (out[i].disk_hw_id.clone(), i));
         }
     }
     out
@@ -334,7 +410,7 @@ pub fn mounts_with(ctx: &CloudContext) -> Vec<Mount> {
     {
         if let Ok(text) = fs::read_to_string("/proc/self/mountinfo") {
             let mut out = parse_mountinfo(&text, ctx);
-            out.sort_by(|a, b| a.path.len().cmp(&b.path.len()));
+            out.sort_by_key(|m| m.path.len());
             let mut unique: Vec<Mount> = Vec::new();
             for m in out {
                 let dup = unique.iter().any(|u| {
@@ -463,7 +539,13 @@ pub fn root_meta_for_with(path: &Path, ctx: &CloudContext) -> Mount {
         return m;
     }
     let fs_uuid = format!("dir:{}:{}", crate::config::hostname(), p);
-    let vol = volume_id(&fs_uuid, "dir", total);
+    let (major, minor) = ((dev >> 32) & 0xffff_ffff, dev & 0xffff_ffff);
+    let mut ident = diskid::identify(major, minor, &fs_uuid);
+    // La ruta no es una identidad entre PCs: sin hardware, no federar.
+    if ident.disk_hw_id.is_empty() {
+        ident.status = IdentityStatus::SinIdentidad;
+    }
+    let vol = diskid::volume_id(&ident.disk_hw_id, ident.partition_offset, &fs_uuid);
     Mount {
         path: p,
         fs: "dir".into(),
@@ -476,6 +558,20 @@ pub fn root_meta_for_with(path: &Path, ctx: &CloudContext) -> Mount {
         removable: false,
         subvol: String::new(),
         dev,
+        disk_hw_id: ident.disk_hw_id.clone(),
+        serial: ident.serial,
+        vendor: ident.vendor,
+        model: ident.model,
+        wwn: ident.wwn,
+        capacity: if ident.capacity > 0 {
+            ident.capacity
+        } else {
+            total
+        },
+        partition_offset: ident.partition_offset,
+        partition_size: ident.partition_size,
+        identity_status: ident.status.label().into(),
+        federable: ident.status.federable(),
         ..Default::default()
     }
 }
@@ -522,6 +618,28 @@ mod tests {
         assert_eq!(classify("fuse.rclone", false), "cloud");
         assert_eq!(classify("ext4", true), "removable");
         assert_eq!(classify("ext4", false), "fixed");
+    }
+
+    #[test]
+    fn volume_id_ignores_mount_point_and_label() {
+        let a = parse_mountinfo(
+            "40 35 8:1 / /media/BACKUP rw - vfat /dev/sda1 rw",
+            &CloudContext::default(),
+        );
+        let b = parse_mountinfo(
+            "40 35 8:1 / /mnt/backup rw - vfat /dev/sda1 rw",
+            &CloudContext::default(),
+        );
+        assert_eq!(a[0].volume_id, b[0].volume_id);
+        assert_eq!(a[0].path, "/media/BACKUP");
+        assert_eq!(b[0].path, "/mnt/backup");
+
+        // Otra particion/disco con la misma etiqueta no se fusiona.
+        let c = parse_mountinfo(
+            "40 35 8:2 / /media/BACKUP rw - vfat /dev/sda2 rw",
+            &CloudContext::default(),
+        );
+        assert_ne!(a[0].volume_id, c[0].volume_id);
     }
 
     #[test]

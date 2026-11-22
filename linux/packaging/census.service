@@ -1,0 +1,15 @@
+[Unit]
+Description=Census index API (read-only)
+Documentation=https://github.com/luciomerlo/census
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/census serve --port 8787
+Restart=on-failure
+RestartSec=3
+# El índice se genera con `census index`; el servicio sólo lo sirve.
+Environment=RUST_BACKTRACE=1
+
+[Install]
+WantedBy=default.target

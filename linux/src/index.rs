@@ -91,6 +91,14 @@ pub struct Root {
     pub max_mtime: i64,
     pub method: String,
     pub subvol: String,
+    /// Identidad de hardware y estado; `mount`/`path` no forman parte de la clave.
+    pub disk_hw_id: String,
+    pub serial: String,
+    pub model: String,
+    pub capacity: u64,
+    pub partition_offset: u64,
+    pub identity_status: String,
+    pub federable: bool,
 }
 
 impl Root {
@@ -311,12 +319,10 @@ impl Index {
             }
         }
         let folded = fold_bytes(name);
-        for &id in slice {
-            if self.name_folded(id) == folded.as_slice() {
-                return Some(id);
-            }
-        }
-        None
+        slice
+            .iter()
+            .find(|&&id| self.name_folded(id) == folded.as_slice())
+            .copied()
     }
 
     /// Resuelve una ruta del usuario a un nodo. Acepta `/`, `/home/x`,
@@ -631,6 +637,12 @@ impl Builder {
         self.nodes.is_empty()
     }
 
+    pub fn mark_incomplete(&mut self, id: u32) {
+        if let Some(n) = self.nodes.get_mut(id as usize) {
+            n.flags &= !F_COMPLETE;
+        }
+    }
+
     pub fn finish(mut self) -> Index {
         let mut ix = Index {
             host: std::mem::take(&mut self.host),
@@ -745,9 +757,16 @@ pub fn normalize_path(input: &str) -> String {
     } else {
         input
     };
-    let absolute = s.starts_with('/') || (s.len() > 1 && s.as_bytes()[1] == b':');
+    // En Windows `C:/x` no es `/C:/x`: la unidad se conserva aparte.
+    let drive = if s.len() > 1 && s.as_bytes()[1] == b':' {
+        Some(&s[..2])
+    } else {
+        None
+    };
+    let rest = drive.map(|_| &s[2..]).unwrap_or(s);
+    let absolute = rest.starts_with('/') || drive.is_some();
     let mut parts: Vec<&str> = Vec::new();
-    for part in s.split('/') {
+    for part in rest.split('/') {
         match part {
             "" | "." => {}
             ".." => {
@@ -757,6 +776,9 @@ pub fn normalize_path(input: &str) -> String {
         }
     }
     let mut out = String::new();
+    if let Some(d) = drive {
+        out.push_str(d);
+    }
     if absolute {
         out.push('/');
     }
@@ -899,7 +921,7 @@ mod tests {
     fn preorder_and_subtrees() {
         let ix = sample();
         let root = ix.roots[0].id;
-        assert_eq!(ix.subtree_end(root), ix.len() as u32 - 0);
+        assert_eq!(ix.subtree_end(root), ix.len() as u32);
         let home = ix.find_dir("/home").unwrap();
         assert_eq!(
             ix.subtree(home).end,

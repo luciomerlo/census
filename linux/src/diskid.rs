@@ -43,7 +43,8 @@ impl IdentityStatus {
     }
 
     pub fn federable(self) -> bool {
-        !matches!(self, IdentityStatus::SinIdentidad)
+        // Conservador: una serial ambigua no federa aunque se haya desambiguado.
+        matches!(self, IdentityStatus::Ok)
     }
 }
 
