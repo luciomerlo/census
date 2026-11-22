@@ -2,6 +2,7 @@
 
 pub mod activity;
 pub mod ai;
+pub mod atlas;
 mod dirsize;
 #[cfg(feature = "gui")]
 pub mod gui;
