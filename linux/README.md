@@ -78,7 +78,7 @@ Sin discovery UDP: el cliente usa IP/host manual.
 
 Cada resultado incluye `path,name,size_bytes,alloc_bytes,mtime_ns,kind,volume_id`
 y `source:{pc_id,state}`. `limit=0` devuelve todo; `search` usa 500 y `top` 50
-por defecto. El contrato completo está en [`../docs/MINIMO.md`](../docs/MINIMO.md).
+por defecto. El contrato completo está en [`MINIMO.md`](MINIMO.md).
 
 ## Identidad (breve)
 

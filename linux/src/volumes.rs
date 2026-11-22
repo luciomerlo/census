@@ -247,6 +247,16 @@ fn is_removable(_major: u64, _minor: u64) -> bool {
     false
 }
 
+/// `fsid:mayor:menor` no es estable entre PCs. Si hay hardware, el hash del
+/// volumen usa UUID vacío; si no hay hardware, queda local y sin federación.
+fn stable_uuid<'a>(fs_uuid: &'a str, hw: &str) -> &'a str {
+    if !hw.is_empty() && fs_uuid.starts_with("fsid:") {
+        ""
+    } else {
+        fs_uuid
+    }
+}
+
 fn classify(fs: &str, removable: bool) -> &'static str {
     if NETWORK_FS.contains(&fs) {
         "network"
@@ -315,7 +325,11 @@ fn parse_mountinfo(text: &str, ctx: &CloudContext) -> Vec<Mount> {
         if !has_real_uuid && ident.disk_hw_id.is_empty() {
             ident.status = IdentityStatus::SinIdentidad;
         }
-        let vol = diskid::volume_id(&ident.disk_hw_id, ident.partition_offset, &fs_uuid);
+        let vol = diskid::volume_id(
+            &ident.disk_hw_id,
+            ident.partition_offset,
+            stable_uuid(&fs_uuid, &ident.disk_hw_id),
+        );
         let mut m = Mount {
             path: mount_point,
             source,
@@ -376,7 +390,11 @@ fn parse_mountinfo(text: &str, ctx: &CloudContext) -> Vec<Mount> {
         m.identity_status = ident.status.label().into();
         m.federable = ident.status == IdentityStatus::Ok && m.kind != "network";
         m.possible_duplicate |= ident.status == IdentityStatus::PosibleDuplicado;
-        m.volume_id = diskid::volume_id(&m.disk_hw_id, m.partition_offset, &m.fs_uuid);
+        m.volume_id = diskid::volume_id(
+            &m.disk_hw_id,
+            m.partition_offset,
+            stable_uuid(&m.fs_uuid, &m.disk_hw_id),
+        );
     }
 
     // Dos discos clonados pueden compartir UUID y offset pero no hardware:
@@ -545,7 +563,12 @@ pub fn root_meta_for_with(path: &Path, ctx: &CloudContext) -> Mount {
     if ident.disk_hw_id.is_empty() {
         ident.status = IdentityStatus::SinIdentidad;
     }
-    let vol = diskid::volume_id(&ident.disk_hw_id, ident.partition_offset, &fs_uuid);
+    let uuid_for_vol = if ident.disk_hw_id.is_empty() {
+        fs_uuid.as_str()
+    } else {
+        ""
+    };
+    let vol = diskid::volume_id(&ident.disk_hw_id, ident.partition_offset, uuid_for_vol);
     Mount {
         path: p,
         fs: "dir".into(),

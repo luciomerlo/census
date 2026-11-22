@@ -31,6 +31,8 @@ for target in "${TARGETS[@]}"; do
   stage="$(mktemp -d)"
   cp "target/$target/release/census" "$stage/census"
   cp README.md "$stage/README.md"
+  cp PENDIENTE.md "$stage/PENDIENTE.md"
+  cp ../docs/MINIMO.md "$stage/MINIMO.md"
   cp packaging/census.service "$stage/census.service"
   cp packaging/install.sh "$stage/install.sh"
   tar -C "$stage" -czf "dist/census-${VERSION}-linux-${arch}.tar.gz" .
