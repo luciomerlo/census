@@ -28,7 +28,10 @@
 4. Layout de referencia: Wiz `src/app.rs` (panel de árbol + tabla + detalle),
    misma disposición, no el mismo código.
 
-## Pendiente inmediato
+## Checkout oficial
+- El repo vive en **C:/Users/Lucio/Desktop/Proyectos/census** (el scratch era
+  temporal). Mismo origin, master a nivel. Los commits previos siguen valiendo.
+
 - **`volumes --json` y `census atlas ...`**: el subagente había reescrito
   `main.rs` y la CLI quedaba colgada; se volvió a HEAD. Hay que re-agregar sólo
   los subcomandos, sin tocar el parseo existente (copia de la versión del
