@@ -288,6 +288,20 @@ pub enum IdentityState {
     PosibleDuplicado,
 }
 
+impl IdentityState {
+    /// Etiqueta estable para la CLI y el JSON. Es el mismo texto que produce
+    /// `serde` (`rename_all = "snake_case"`): no se cambia después, lo consumen
+    /// Sort, Wiz y Atlas.
+    pub fn label(self) -> &'static str {
+        match self {
+            IdentityState::Ok => "ok",
+            IdentityState::SinIdentidad => "sin_identidad",
+            IdentityState::Cloud => "cloud",
+            IdentityState::PosibleDuplicado => "posible_duplicado",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Volume {
     /// `hash(DiskHwId || offset_particion || fs_uuid)`. La letra o el punto
@@ -301,6 +315,11 @@ pub struct Volume {
     pub disk_guid: Option<String>,
     #[serde(default)]
     pub serial: Option<String>,
+    /// Modelo del aparato tal como lo informa el sistema (`MediaName` de
+    /// `diskutil`). Es presentación: no entra en `DiskHwId` aparte de la
+    /// cadena `vendor_model` que ya lo usa.
+    #[serde(default)]
+    pub model: Option<String>,
     #[serde(default)]
     pub partition_offset: u64,
     #[serde(default)]
@@ -383,7 +402,10 @@ pub fn disk_hw_id(
         &[0],
         guid.as_bytes(),
     ]);
-    Some(format!("disk:{h:016x}"))
+    // Contrato §10 y `tests/identity.rs`: FNV-1a 64 en hex minúsculas de 16
+    // caracteres, **sin prefijo**. El prefijo `disk:` anterior rompía el
+    // contrato que consumen Wiz, Sort y Atlas.
+    Some(format!("{h:016x}"))
 }
 
 /// `volume_id` = hash(DiskHwId || offset_particion || fs_uuid). El mismo disco
@@ -397,10 +419,13 @@ pub fn volume_identity(disk_hw: &str, partition_offset: u64, fs_uuid: &str) -> V
         &[0],
         fs_uuid.as_bytes(),
     ]);
-    Arc::from(format!("vol:{h:016x}").as_str())
+    // Mismo contrato que `DiskHwId`: 16 hex minúsculas, sin prefijo.
+    Arc::from(format!("{h:016x}").as_str())
 }
 
-/// Raíz suelta que no es un volumen montado.
+/// Raíz suelta que no es un volumen montado: `dir:<hostname>:<path>`, la
+/// forma que fija `docs/ATLAS.md` §10.5. No se hashea porque es la única
+/// identidad posible y el usuario la tiene que poder leer.
 pub fn dir_volume_id(host: &str, path: &str) -> VolumeId {
     Arc::from(format!("dir:{host}:{path}").as_str())
 }
@@ -478,8 +503,11 @@ mod tests {
         let a = volume_identity(&hw, 0, "fs-1");
         let b = volume_identity(&hw, 0, "fs-1");
         assert_eq!(a, b);
-        assert!(a.starts_with("vol:"));
-        assert!(a[4..].chars().all(|c| c.is_ascii_hexdigit()));
+        // Contrato §10 / `tests/identity.rs`: 16 hex minúsculas, sin prefijo.
+        assert_eq!(a.len(), 16, "volume_id fuera de contrato: {a}");
+        assert!(a
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
         assert_ne!(a, volume_identity(&hw, 0, "fs-2"));
     }
 
@@ -501,7 +529,10 @@ mod tests {
         let by_serial = disk_hw_id(Some("ABC"), "NVMe", 1000, None).unwrap();
         let by_guid = disk_hw_id(None, "NVMe", 1000, Some("GUID-1")).unwrap();
         assert_ne!(by_serial, by_guid);
-        assert!(by_serial.starts_with("disk:"));
+        assert_eq!(by_serial.len(), 16, "DiskHwId fuera de contrato: {by_serial}");
+        assert!(by_serial
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
         assert!(disk_hw_id(None, "", 0, None).is_none());
     }
 

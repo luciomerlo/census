@@ -209,6 +209,7 @@ pub fn synthetic_volume(path: &Path, host: &str) -> crate::types::Volume {
         disk_hw_id: None,
         disk_guid: None,
         serial: None,
+        model: None,
         partition_offset: 0,
         identity_state: crate::types::IdentityState::SinIdentidad,
         cloud_id: None,

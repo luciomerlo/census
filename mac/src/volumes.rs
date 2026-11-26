@@ -441,6 +441,9 @@ mod backend {
                     disk_hw_id: hw,
                     disk_guid: disk_guid.map(|s| s.to_string()),
                     serial: serial.map(|s| s.to_string()),
+                    // `MediaName` es el modelo del aparato; `vendor` arriba
+                    // ya lo usa para `DiskHwId` cuando falta el serial.
+                    model: Some(vendor.clone()).filter(|m| !m.is_empty()),
                     partition_offset: offset,
                     identity_state,
                     cloud_id,
@@ -492,6 +495,7 @@ mod backend {
                     disk_hw_id: None,
                     disk_guid: None,
                     serial: None,
+                    model: None,
                     partition_offset: 0,
                     identity_state: state,
                     cloud_id,

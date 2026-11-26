@@ -340,6 +340,11 @@ pub fn index_path() -> PathBuf {
     data_dir().join("index.cnx")
 }
 
+/// Directorio de snapshots: un `.cnx` por `volume_id`, nunca uno global.
+pub fn snapshots_dir() -> PathBuf {
+    data_dir().join("snapshots")
+}
+
 pub fn wcat_path() -> PathBuf {
     data_dir().join("index.wcat")
 }

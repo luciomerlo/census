@@ -9,18 +9,22 @@
 //!
 //! Regla de producto: indexar y consultar es **read-only**. No se borra nada.
 
+pub mod catalogo;
 pub mod config;
 pub mod fmt;
 pub mod fuente_mac;
 pub mod index;
 pub mod query;
+pub mod snapshot;
 pub mod source;
 pub mod time;
 pub mod types;
 pub mod volumes;
 
+pub use catalogo::{Catalog, Hit, LoadedVolume, Notice, VolumeInfo};
 pub use index::{Compacto, Index, Node, Stats};
 pub use query::{Query, Sort};
+pub use snapshot::{save_per_volume, SavedFile, Snapshot, SnapshotError};
 pub use types::{
     Cambio, CambioKind, Encoding, Entrada, FileId, FileKey, Kind, Marca, Provenance, Volume,
 };

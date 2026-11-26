@@ -167,6 +167,65 @@ impl Index {
         self.path_of(parent)
     }
 
+    /// Recalcula el orden por nombre plegado. Se usa al remapear el montaje,
+    /// que cambia el nombre de un nodo raíz sin tocar el resto del árbol.
+    pub fn sort_by_name(&mut self) {
+        self.por_nombre = orden_por_nombre(&self.compacto, &self.folded);
+    }
+
+    /// Recalcula `content_hash` desde las arenas.
+    pub fn recompute_content_hash(&mut self) {
+        self.content_hash = fnv1a64(&[&self.names, &self.folded]);
+    }
+
+    /// Cambia el nombre de un nodo. Sólo se usa al remapear el punto de
+    /// montaje de un snapshot cargado: el árbol no se recorre ni se reindexa.
+    ///
+    /// Si el nombre nuevo entra en el hueco del viejo se escribe en el lugar
+    /// (así `A`→`B`→`A` no hace crecer la arena); si no, se agrega al final.
+    pub fn rename_node(&mut self, id: u32, nombre: &str) {
+        let Some(node) = self.nodes.get(id as usize).copied() else {
+            return;
+        };
+        let bytes = nombre.as_bytes();
+        if bytes.is_empty() {
+            return;
+        }
+        let len = bytes.len().min(u16::MAX as usize) as u16;
+        // El plegado conserva el largo en bytes, pero no se depende de eso.
+        let folded = crate::query::fold_bytes(&bytes[..len as usize]);
+        // El hueco se puede reusar sólo si el nombre nuevo entra completo en
+        // el largo viejo; si no, se agrega al final de la arena.
+        let fits = bytes.len() <= node.name_len as usize && folded.len() <= node.name_len as usize;
+        let off = if fits {
+            let a = node.name_off as usize;
+            let Some(n_name) = self.names.get_mut(a..a + bytes.len()) else {
+                return;
+            };
+            n_name.copy_from_slice(bytes);
+            let Some(n_fold) = self.folded.get_mut(a..a + folded.len()) else {
+                return;
+            };
+            n_fold.copy_from_slice(&folded);
+            node.name_off
+        } else {
+            let off = self.names.len() as u32;
+            self.names.extend_from_slice(bytes);
+            self.folded.extend_from_slice(&folded);
+            off
+        };
+        if let Some(n) = self.nodes.get_mut(id as usize) {
+            n.name_off = off;
+            n.name_len = len;
+        }
+        if let Some(c) = self.compacto.get_mut(id as usize) {
+            c.off = off;
+            c.len = len;
+        }
+        self.sort_by_name();
+        self.recompute_content_hash();
+    }
+
     pub fn kind(&self, id: u32) -> Kind {
         let f = self.nodes[id as usize].flags;
         if f & FLAG_DIR != 0 {
@@ -236,6 +295,130 @@ impl Index {
             .find(|&&c| self.folded_name(c) == folded.as_slice())
             .copied()
     }
+}
+
+/// Índices derivados de `nodes` + arena plegada.
+///
+/// Los calcula una sola función para que el `Builder` y la carga de un
+/// snapshot `.cnx` no puedan divergir: si la carga recalculase por su cuenta,
+/// una diferencia mínima cambiaría el orden de la consulta entre sesiones.
+///
+/// Precondición (la cumple quien llama; `snapshot::cargar` la valida antes):
+/// `node.parent < nodes.len()`, `name_off + name_len <= folded.len()` y cada
+/// id de `roots` dentro de rango.
+pub struct Derived {
+    pub compacto: Vec<Compacto>,
+    pub dir_bytes: Vec<u64>,
+    pub hijos_inicio: Vec<u32>,
+    pub hijos: Vec<u32>,
+    pub por_nombre: Vec<u32>,
+    pub euler: Vec<u32>,
+    pub tin: Vec<u32>,
+    pub tout: Vec<u32>,
+}
+
+pub fn compute_derived(nodes: &[Node], folded: &[u8], roots: &[u32]) -> Derived {
+    let n = nodes.len();
+    // Hijos por carpeta en CSR.
+    let mut counts = vec![0u32; n + 1];
+    for node in nodes {
+        counts[node.parent as usize + 1] += 1;
+    }
+    for i in 0..n {
+        counts[i + 1] += counts[i];
+    }
+    let hijos_inicio = counts.clone();
+    let mut hijos = vec![0u32; n];
+    let mut cursor = counts;
+    for (id, node) in nodes.iter().enumerate() {
+        if node.parent as usize != id {
+            let p = node.parent as usize;
+            hijos[cursor[p] as usize] = id as u32;
+            cursor[p] += 1;
+        }
+    }
+    // Compacto para escanear sin tocar Node.
+    let compacto: Vec<Compacto> = nodes
+        .iter()
+        .map(|node| Compacto {
+            off: node.name_off,
+            len: node.name_len,
+            flags: node.flags,
+            parent: node.parent,
+        })
+        .collect();
+    let por_nombre = orden_por_nombre(&compacto, folded);
+    // Tamaño recursivo. Un hardlink cuenta una vez; los clones APFS se
+    // cuentan dos veces (se marcan aparte en una fase posterior).
+    let mut dir_bytes = vec![0u64; n];
+    let mut vistos: HashSet<(u16, u64)> = HashSet::new();
+    for id in (0..n).rev() {
+        let node = &nodes[id];
+        if node.flags & FLAG_DIR != 0 {
+            continue;
+        }
+        let mut cuenta = true;
+        if node.flags & FLAG_HARDLINK != 0 {
+            cuenta = vistos.insert((node.vol, node.ino));
+        }
+        if cuenta {
+            dir_bytes[id] = node.alloc.max(node.size);
+        }
+    }
+    for id in (0..n).rev() {
+        let p = nodes[id].parent;
+        if p as usize != id && (p as usize) < n {
+            let v = dir_bytes[id];
+            dir_bytes[p as usize] = dir_bytes[p as usize].saturating_add(v);
+        }
+    }
+    // Euler: preorden y rango de subárbol, iterativo.
+    let mut euler = Vec::with_capacity(n);
+    let mut tin = vec![u32::MAX; n];
+    let mut tout = vec![u32::MAX; n];
+    for &root in roots {
+        let mut stack: Vec<(u32, bool)> = vec![(root, false)];
+        while let Some((id, salida)) = stack.pop() {
+            if salida {
+                tout[id as usize] = euler.len() as u32;
+                continue;
+            }
+            if tin[id as usize] != u32::MAX {
+                continue;
+            }
+            tin[id as usize] = euler.len() as u32;
+            euler.push(id);
+            stack.push((id, true));
+            let a = hijos_inicio[id as usize] as usize;
+            let b = hijos_inicio[id as usize + 1] as usize;
+            for &c in hijos[a..b].iter().rev() {
+                stack.push((c, false));
+            }
+        }
+    }
+    Derived {
+        compacto,
+        dir_bytes,
+        hijos_inicio,
+        hijos,
+        por_nombre,
+        euler,
+        tin,
+        tout,
+    }
+}
+
+/// Orden por nombre plegado, desempate estable por id de nodo.
+fn orden_por_nombre(compacto: &[Compacto], folded: &[u8]) -> Vec<u32> {
+    let mut orden: Vec<u32> = (0..compacto.len() as u32).collect();
+    orden.sort_unstable_by(|&a, &b| {
+        let ca = compacto[a as usize];
+        let cb = compacto[b as usize];
+        let na = &folded[ca.off as usize..ca.off as usize + ca.len as usize];
+        let nb = &folded[cb.off as usize..cb.off as usize + cb.len as usize];
+        na.cmp(nb).then(a.cmp(&b))
+    });
+    orden
 }
 
 pub fn normalize_dir(path: &str) -> String {
@@ -435,94 +618,8 @@ impl Builder {
         provenance: Provenance,
     ) -> Index {
         self.flush_pending();
-        let n = self.nodes.len();
-        // Hijos por carpeta en CSR.
-        let mut counts = vec![0u32; n + 1];
-        for node in &self.nodes {
-            counts[node.parent as usize + 1] += 1;
-        }
-        for i in 0..n {
-            counts[i + 1] += counts[i];
-        }
-        let hijos_inicio = counts.clone();
-        let mut hijos = vec![0u32; n];
-        let mut cursor = counts;
-        for (id, node) in self.nodes.iter().enumerate() {
-            if node.parent as usize != id {
-                let p = node.parent as usize;
-                hijos[cursor[p] as usize] = id as u32;
-                cursor[p] += 1;
-            }
-        }
-        // Compacto para escanear sin tocar Node.
-        let compacto: Vec<Compacto> = self
-            .nodes
-            .iter()
-            .map(|node| Compacto {
-                off: node.name_off,
-                len: node.name_len,
-                flags: node.flags,
-                parent: node.parent,
-            })
-            .collect();
-        // Orden por nombre plegado, desempate estable por id.
-        let mut por_nombre: Vec<u32> = (0..n as u32).collect();
-        por_nombre.sort_unstable_by(|&a, &b| {
-            let ca = compacto[a as usize];
-            let cb = compacto[b as usize];
-            let na = &self.folded[ca.off as usize..ca.off as usize + ca.len as usize];
-            let nb = &self.folded[cb.off as usize..cb.off as usize + cb.len as usize];
-            na.cmp(nb).then(a.cmp(&b))
-        });
-        // Tamaño recursivo. Un hardlink cuenta una vez; los clones APFS se
-        // cuentan dos veces (se marcan aparte en una fase posterior).
-        let mut dir_bytes = vec![0u64; n];
-        let mut vistos: HashSet<(u16, u64)> = HashSet::new();
-        for id in (0..n).rev() {
-            let node = &self.nodes[id];
-            if node.flags & FLAG_DIR != 0 {
-                continue;
-            }
-            let mut cuenta = true;
-            if node.flags & FLAG_HARDLINK != 0 {
-                cuenta = vistos.insert((node.vol, node.ino));
-            }
-            if cuenta {
-                dir_bytes[id] = node.alloc.max(node.size);
-            }
-        }
-        for id in (0..n).rev() {
-            let p = self.nodes[id].parent;
-            if p as usize != id && p < n as u32 {
-                let v = dir_bytes[id];
-                dir_bytes[p as usize] = dir_bytes[p as usize].saturating_add(v);
-            }
-        }
-        // Euler: preorden y rango de subárbol, iterativo.
-        let mut euler = Vec::with_capacity(n);
-        let mut tin = vec![u32::MAX; n];
-        let mut tout = vec![u32::MAX; n];
+        let d = compute_derived(&self.nodes, &self.folded, &self.roots);
         let roots = self.roots.clone();
-        for &root in &roots {
-            let mut stack: Vec<(u32, bool)> = vec![(root, false)];
-            while let Some((id, salida)) = stack.pop() {
-                if salida {
-                    tout[id as usize] = euler.len() as u32;
-                    continue;
-                }
-                if tin[id as usize] != u32::MAX {
-                    continue;
-                }
-                tin[id as usize] = euler.len() as u32;
-                euler.push(id);
-                stack.push((id, true));
-                let a = hijos_inicio[id as usize] as usize;
-                let b = hijos_inicio[id as usize + 1] as usize;
-                for &c in hijos[a..b].iter().rev() {
-                    stack.push((c, false));
-                }
-            }
-        }
         self.stats.name_bytes = self.names.len() as u64;
         self.stats.build_ms = self.started.elapsed().as_millis() as u64;
         self.stats.skipped = self.skipped + self.orphans;
@@ -532,14 +629,14 @@ impl Builder {
             nodes: self.nodes,
             names: self.names,
             folded: self.folded,
-            compacto,
-            dir_bytes,
-            hijos_inicio,
-            hijos,
-            por_nombre,
-            euler,
-            tin,
-            tout,
+            compacto: d.compacto,
+            dir_bytes: d.dir_bytes,
+            hijos_inicio: d.hijos_inicio,
+            hijos: d.hijos,
+            por_nombre: d.por_nombre,
+            euler: d.euler,
+            tin: d.tin,
+            tout: d.tout,
             volumes: self.volumes,
             built_at,
             generation,
