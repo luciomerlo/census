@@ -390,8 +390,8 @@ pub fn index_roots(
     Ok((ix, report))
 }
 
-#[cfg(target_os = "linux")]
-mod sys {
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub mod sys {
     use super::*;
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
@@ -470,6 +470,37 @@ mod sys {
         Ok(out)
     }
 
+    /// En Android se usa `lstat` y no `statx` por syscall directa: el filtro
+    /// seccomp de las apps no garantiza `statx` antes de Android 11, y el
+    /// almacenamiento compartido (FUSE) no informa `btime` de todos modos.
+    #[cfg(target_os = "android")]
+    pub fn lstat(path: &Path) -> std::io::Result<Meta> {
+        let c = CString::new(path.as_os_str().as_bytes())
+            .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
+        let mut st: libc::stat = unsafe { std::mem::zeroed() };
+        if unsafe { libc::lstat(c.as_ptr(), &mut st) } != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        let kind = match (st.st_mode as u32) & libc::S_IFMT as u32 {
+            m if m == libc::S_IFDIR as u32 => Kind::Dir,
+            m if m == libc::S_IFLNK as u32 => Kind::Symlink,
+            m if m == libc::S_IFREG as u32 => Kind::File,
+            _ => Kind::Other,
+        };
+        Ok(Meta {
+            kind,
+            size: st.st_size as u64,
+            alloc: (st.st_blocks as u64).saturating_mul(512),
+            mtime_ns: ts_ns(st.st_mtime as i64, st.st_mtime_nsec as u32),
+            btime_ns: 0,
+            dev: st.st_dev as u64,
+            ino: st.st_ino as u64,
+            nlink: st.st_nlink as u32,
+            mode: st.st_mode as u16,
+        })
+    }
+
+    #[cfg(not(target_os = "android"))]
     pub fn lstat(path: &Path) -> std::io::Result<Meta> {
         let c = CString::new(path.as_os_str().as_bytes())
             .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
@@ -519,8 +550,8 @@ mod sys {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
-mod sys {
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+pub mod sys {
     use super::*;
     use std::fs;
 

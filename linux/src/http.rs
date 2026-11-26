@@ -20,6 +20,24 @@ pub struct Options {
 }
 
 pub fn serve(ix: &Index, opts: &Options) -> Result<(), String> {
+    serve_with(&|| None, Some(ix), opts)
+}
+
+/// Variante para procesos de larga vida (Android): `current` entrega el indice
+/// vigente en cada pedido, asi que un reindexado en segundo plano se ve sin
+/// reiniciar el servidor. `fixed` es el camino de `serve`.
+pub fn serve_live(
+    current: &dyn Fn() -> std::sync::Arc<Index>,
+    opts: &Options,
+) -> Result<(), String> {
+    serve_with(&|| Some(current()), None, opts)
+}
+
+fn serve_with(
+    live: &dyn Fn() -> Option<std::sync::Arc<Index>>,
+    fixed: Option<&Index>,
+    opts: &Options,
+) -> Result<(), String> {
     let host = if opts.lan { "0.0.0.0" } else { "127.0.0.1" };
     let server = Server::http((host, opts.port)).map_err(|e| {
         format!(
@@ -31,11 +49,22 @@ pub fn serve(ix: &Index, opts: &Options) -> Result<(), String> {
         "census {} en http://{host}:{}/v1/ (pc_id {})",
         env!("CARGO_PKG_VERSION"),
         opts.port,
-        ix.pc_id
+        fixed
+            .map(|i| i.pc_id.clone())
+            .or_else(|| live().map(|i| i.pc_id.clone()))
+            .unwrap_or_default()
     );
     let ctx = CloudContext::load();
     for request in server.incoming_requests() {
-        let _ = handle(ix, opts, &ctx, request);
+        match (live(), fixed) {
+            (Some(arc), _) => {
+                let _ = handle(&arc, opts, &ctx, request);
+            }
+            (None, Some(ix)) => {
+                let _ = handle(ix, opts, &ctx, request);
+            }
+            _ => {}
+        }
     }
     Ok(())
 }

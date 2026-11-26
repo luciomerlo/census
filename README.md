@@ -24,6 +24,7 @@ no compilan en las otras.
 | **Windows** | `src/` | MFT de NTFS (lectura en bloque); recorrido si no hay elevación o el FS no es NTFS | `DiskHwId` por `IOCTL_STORAGE_QUERY_PROPERTY` + GUID de volumen | `.wcat` | Motor, GUI, IPC y MCP funcionando y medidos |
 | **macOS** | `mac/` | `getattrlistbulk`; FSEvents para cambios | `DiskUUID`/`VolumeUUID` + offset de partición | `.cnx` (y `.wcat` exportado) | Alpha: núcleo, consulta, volúmenes y fuente rápida; snapshot/CLI/MCP/FSEvents en curso |
 | **Linux** | `linux/` | `getdents64` + `statx` en paralelo; vías nativas por FS (btrfs/XFS/ext4) como acelerador opcional | udev/sysfs: `ID_SERIAL_SHORT`, `ID_WWN_WITH_EXTENSION`, modelo, capacidad y offset de partición | `.cns` | Base, índice, volúmenes, nube y primitivas de `diskid`; scanner/snapshot/consultas en curso |
+| **Android** | `android/` | Reutiliza el walker de `linux/`; reescaneo incremental por `MediaStore` (generaciones) y barrido podado por `mtime` de carpeta | `UUID` del filesystem (SD) / `pc_id` (interno) | `.cns` | Núcleo probado; `.so` y APK compilan, sin probar en teléfono: [`docs/ANDROID.md`](docs/ANDROID.md) |
 
 ### Lo que comparten
 
