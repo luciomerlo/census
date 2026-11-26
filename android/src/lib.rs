@@ -1,4 +1,4 @@
-//! Census para Android.
+//! CensusIndex para Android.
 //!
 //! La app (Kotlin) decide **cuando** mirar y **donde**; este nucleo decide
 //! **como** actualizar el indice con el menor trabajo posible:

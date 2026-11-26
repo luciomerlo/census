@@ -1,4 +1,4 @@
-# Captura la ventana de Census en PNG (solo la ventana, no el escritorio).
+# Captura la ventana de CensusIndex en PNG (solo la ventana, no el escritorio).
 # Uso: powershell -NoProfile -ExecutionPolicy Bypass -File tools\capture-gui.ps1 -Theme light
 param(
     [string]$Theme = "light",
@@ -8,7 +8,7 @@ param(
 )
 
 $here = Split-Path -Parent $PSScriptRoot
-$exe = Join-Path $here "target\release\census.exe"
+$exe = Join-Path $here "target\release\censusindex.exe"
 $out = Join-Path $here "docs\gui-$Theme.png"
 New-Item -ItemType Directory -Force -Path (Join-Path $here "docs") | Out-Null
 

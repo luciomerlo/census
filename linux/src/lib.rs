@@ -1,9 +1,9 @@
-//! Census para Linux.
+//! CensusIndex para Linux.
 //!
 //! Indice de archivos en RAM con snapshot binario, consultas estilo Everything,
 //! catalogo de indices de varias PC por Tailscale y servidor MCP.
 //!
-//! El diseno es el mismo de Census/Windows: nodos planos, arena de nombres,
+//! El diseno es el mismo de CensusIndex/Windows: nodos planos, arena de nombres,
 //! registro compacto para escanear y rangos de subarbol para resolver rutas.
 //! Cambian tres cosas porque Linux no es NTFS:
 //!
@@ -31,6 +31,7 @@ pub mod scan;
 pub mod snapshot;
 pub mod tailscale;
 pub mod time;
+pub mod volpolicy;
 pub mod volumes;
 pub mod watch;
 

@@ -1,4 +1,4 @@
-//! CLI de Census para macOS.
+//! CLI de CensusIndex para macOS.
 //!
 //! Expone `version`, `volumes`, `cloud-id`, `fold` y `snapshot`
 //! (`save`/`list`/`query`). `index`, `serve`, `mcp` y `atlas` siguen en
@@ -11,15 +11,15 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use census::catalogo::Catalog;
-use census::config::Config;
-use census::index::Builder;
-use census::query::fold_str;
-use census::snapshot::save_per_volume;
-use census::source::{Fuente, Result as SourceResult, WalkFuente};
-use census::types::{Marca, Provenance, Volume};
+use censusindex::catalogo::Catalog;
+use censusindex::config::Config;
+use censusindex::index::Builder;
+use censusindex::query::fold_str;
+use censusindex::snapshot::save_per_volume;
+use censusindex::source::{Fuente, Result as SourceResult, WalkFuente};
+use censusindex::types::{Marca, Provenance, Volume};
 
-/// Fila de `census volumes --json`. Los nombres son contrato: los consume
+/// Fila de `censusindex volumes --json`. Los nombres son contrato: los consume
 /// Sort/Atlas y no se cambian.
 #[derive(Serialize)]
 struct VolumeRow {
@@ -34,7 +34,7 @@ struct VolumeRow {
     cloud_id: Option<String>,
 }
 
-/// Fila de `census snapshot save --json`.
+/// Fila de `censusindex snapshot save --json`.
 #[derive(Serialize)]
 struct SavedRow {
     volume_id: String,
@@ -48,15 +48,15 @@ fn main() {
     let cmd = args.first().map(|s| s.as_str()).unwrap_or("help");
     match cmd {
         "version" | "--version" | "-V" => {
-            println!("census {} ({})", census::APP_VERSION, census::platform_name());
+            println!("censusindex {} ({})", censusindex::APP_VERSION, censusindex::platform_name());
         }
         "volumes" => cmd_volumes(&args[1..]),
         "cloud-id" => {
             if args.len() < 4 {
-                eprintln!("uso: census cloud-id <provider> <account> <unidad>");
+                eprintln!("uso: censusindex cloud-id <provider> <account> <unidad>");
                 std::process::exit(2);
             }
-            println!("{}", census::volumes::cloud_id(&args[1], &args[2], &args[3]));
+            println!("{}", censusindex::volumes::cloud_id(&args[1], &args[2], &args[3]));
         }
         "fold" => {
             if let Some(s) = args.get(1) {
@@ -66,7 +66,7 @@ fn main() {
         "snapshot" => cmd_snapshot(&args[1..]),
         "help" | "--help" | "-h" => help(),
         other => {
-            eprintln!("comando desconocido: {other} (probá `census help`)");
+            eprintln!("comando desconocido: {other} (probá `censusindex help`)");
             std::process::exit(2);
         }
     }
@@ -74,20 +74,20 @@ fn main() {
 
 fn help() {
     println!(
-        "census {}\n\n\
-         Uso:\n  census version\n  census volumes [--json]\n  census cloud-id <provider> <account> <unidad>\n  census fold <texto>\n\
-         \n  census snapshot save [--root <ruta>]... [--json]   un .cnx por volume_id\n\
-         \n  census snapshot list [--json]                      snapshots presentes y online/offline\n\
-         \n  census snapshot query <consulta> [--json] [--todas] [--limit N] [--offset N] [--sort nombre]\n\n\
+        "censusindex {}\n\n\
+         Uso:\n  censusindex version\n  censusindex volumes [--json]\n  censusindex cloud-id <provider> <account> <unidad>\n  censusindex fold <texto>\n\
+         \n  censusindex snapshot save [--root <ruta>]... [--json]   un .cnx por volume_id\n\
+         \n  censusindex snapshot list [--json]                      snapshots presentes y online/offline\n\
+         \n  censusindex snapshot query <consulta> [--json] [--todas] [--limit N] [--offset N] [--sort nombre]\n\n\
          En construcción: index, serve, mcp, atlas. Ver PENDIENTE.md.",
-        census::APP_VERSION
+        censusindex::APP_VERSION
     );
 }
 
 fn cmd_volumes(rest: &[String]) {
     let cfg = Config::load();
     let host = cfg.env_label();
-    let vols = census::volumes::detect(&cfg, &host);
+    let vols = censusindex::volumes::detect(&cfg, &host);
     if rest.iter().any(|a| a == "--json") {
         let mut rows: Vec<VolumeRow> = vols.iter().map(volume_row).collect();
         // Orden estable: por punto de montaje y, si empataran, por volume_id.
@@ -113,7 +113,7 @@ fn volume_row(v: &Volume) -> VolumeRow {
         disk_hw_id: v.disk_hw_id.clone(),
         identity_status: v.identity_state.label(),
         // §10: sin identidad inequívoca no se publica en federación.
-        federable: census::volumes::federation_ok(v),
+        federable: censusindex::volumes::federation_ok(v),
         mount: v.mount.clone(),
         model: v.model.clone(),
         serial: v.serial.clone(),
@@ -160,7 +160,7 @@ fn snapshot_save(args: &[String]) {
     let mut pares: Vec<(Volume, PathBuf)> = Vec::new();
     if roots.is_empty() {
         // Sin `--root` se indexan los volúmenes locales detectados.
-        for v in census::volumes::detect(&cfg, &host) {
+        for v in censusindex::volumes::detect(&cfg, &host) {
             if !v.is_indexable() {
                 continue;
             }
@@ -174,7 +174,7 @@ fn snapshot_save(args: &[String]) {
                 eprintln!("aviso: {} no existe, se saltea", p.display());
                 continue;
             }
-            let v = census::source::synthetic_volume(&p, &host);
+            let v = censusindex::source::synthetic_volume(&p, &host);
             pares.push((v, p));
         }
     }
@@ -184,7 +184,7 @@ fn snapshot_save(args: &[String]) {
     let mut vistos: std::collections::HashSet<String> = std::collections::HashSet::new();
     pares.retain(|(v, _)| vistos.insert(v.id.to_string()));
     if pares.is_empty() {
-        exit_uso("no hay nada para indexar (probá `census snapshot save --root <ruta>`)");
+        exit_uso("no hay nada para indexar (probá `censusindex snapshot save --root <ruta>`)");
     }
     let vols: Vec<Volume> = pares.iter().map(|(v, _)| v.clone()).collect();
 
@@ -196,7 +196,7 @@ fn snapshot_save(args: &[String]) {
             skip_mounts: true,
             excludes: cfg.exclude_paths(),
         };
-        let mut emitir = |lote: &[census::types::Entrada]| -> SourceResult<()> {
+        let mut emitir = |lote: &[censusindex::types::Entrada]| -> SourceResult<()> {
             builder.push_batch(lote);
             Ok(())
         };
@@ -204,23 +204,23 @@ fn snapshot_save(args: &[String]) {
             eprintln!("aviso: no se pudo recorrer {}: {e}", path.display());
         }
     }
-    let built_at = census::time::secs(census::time::now_ns());
+    let built_at = censusindex::time::secs(censusindex::time::now_ns());
     let ix = builder.finish(
         built_at,
         // Generación: hoy es fija; la persistencia real llega con FSEvents.
         1,
         Marca::default(),
         Provenance {
-            pc_id: census::config::pc_id(),
+            pc_id: censusindex::config::pc_id(),
             host: host.clone(),
-            platform: census::platform_name().into(),
-            arch: census::arch_name().into(),
+            platform: censusindex::platform_name().into(),
+            arch: censusindex::arch_name().into(),
             env: cfg.env_label(),
-            app_version: census::APP_VERSION.into(),
+            app_version: censusindex::APP_VERSION.into(),
         },
     );
 
-    let dir = census::config::snapshots_dir();
+    let dir = censusindex::config::snapshots_dir();
     let (ok, fallos) = save_per_volume(&ix, &dir);
     for f in &fallos {
         eprintln!("aviso: no se pudo guardar el snapshot de {f}");
@@ -260,8 +260,8 @@ fn snapshot_save(args: &[String]) {
 fn snapshot_list(args: &[String]) {
     let json = args.iter().any(|a| a == "--json");
     let cfg = Config::load();
-    let vols = census::volumes::detect(&cfg, &cfg.env_label());
-    let mut cat = Catalog::load(&census::config::snapshots_dir());
+    let vols = censusindex::volumes::detect(&cfg, &cfg.env_label());
+    let mut cat = Catalog::load(&censusindex::config::snapshots_dir());
     cat.reconcile(&vols);
     for n in &cat.notices {
         eprintln!("aviso: se ignora {}: {}", n.file, n.reason);
@@ -279,10 +279,10 @@ fn snapshot_list(args: &[String]) {
             if f.online { "online" } else { "offline" }.to_string(),
             f.nodes.to_string(),
             f.marca.clone(),
-            census::fmt::stamp(f.built_at * census::time::NS),
+            censusindex::fmt::stamp(f.built_at * censusindex::time::NS),
         ]);
     }
-    census::fmt::table(
+    censusindex::fmt::table(
         &["VOLUMEN", "MONTAJE", "ESTADO", "NODOS", "MARCA", "CONSTRUIDO"],
         &rows,
     );
@@ -294,7 +294,7 @@ fn snapshot_query(args: &[String]) {
     let mut todas = false;
     let mut limit = 50usize;
     let mut offset = 0usize;
-    let mut sort = census::query::Sort::PathAsc;
+    let mut sort = censusindex::query::Sort::PathAsc;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -318,7 +318,7 @@ fn snapshot_query(args: &[String]) {
                 i += 1;
                 sort = args
                     .get(i)
-                    .and_then(|v| census::query::Sort::parse(v))
+                    .and_then(|v| censusindex::query::Sort::parse(v))
                     .unwrap_or_else(|| exit_uso("--sort necesita nombre|ruta|tamano|fecha"));
             }
             flag if flag.starts_with("--") => exit_uso(&format!("bandera desconocida: {flag}")),
@@ -332,20 +332,20 @@ fn snapshot_query(args: &[String]) {
         i += 1;
     }
     let Some(texto) = texto else {
-        exit_uso("falta la consulta: census snapshot query <consulta>");
+        exit_uso("falta la consulta: censusindex snapshot query <consulta>");
     };
 
     let cfg = Config::load();
-    let vols = census::volumes::detect(&cfg, &cfg.env_label());
-    let mut cat = Catalog::load(&census::config::snapshots_dir());
+    let vols = censusindex::volumes::detect(&cfg, &cfg.env_label());
+    let mut cat = Catalog::load(&censusindex::config::snapshots_dir());
     cat.reconcile(&vols);
     for n in &cat.notices {
         eprintln!("aviso: se ignora {}: {}", n.file, n.reason);
     }
     if cat.volumes.is_empty() {
         eprintln!(
-            "no hay snapshots en {} (creá uno con `census snapshot save`)",
-            census::config::snapshots_dir().display()
+            "no hay snapshots en {} (creá uno con `censusindex snapshot save`)",
+            censusindex::config::snapshots_dir().display()
         );
         std::process::exit(1);
     }
@@ -359,12 +359,12 @@ fn snapshot_query(args: &[String]) {
         rows.push(vec![
             h.volume_id.chars().take(8).collect::<String>(),
             h.path.clone(),
-            census::fmt::human(h.size),
-            census::fmt::stamp(h.mtime_ns),
+            censusindex::fmt::human(h.size),
+            censusindex::fmt::stamp(h.mtime_ns),
             if h.online { "online" } else { "offline" }.to_string(),
         ]);
     }
-    census::fmt::table(&["VOLUMEN", "RUTA", "TAMAÑO", "FECHA", "ESTADO"], &rows);
+    censusindex::fmt::table(&["VOLUMEN", "RUTA", "TAMAÑO", "FECHA", "ESTADO"], &rows);
     println!("{} resultado(s)", hits.len());
 }
 
@@ -386,7 +386,7 @@ fn exit_uso(msg: &str) -> ! {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use census::types::IdentityState;
+    use censusindex::types::IdentityState;
     use serde_json::Value;
 
     /// §10 y `tests/identity.rs`: nombres en `snake_case`, 16 hex sin prefijo

@@ -16,11 +16,11 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use census_ipc::client::Client;
-use census_ipc::protocol::{item, parse_reply, req, sort, Reply, ReplyItem};
-use census_ipc::server::{serve, Searcher, CLASS};
+use censusindex_ipc::client::Client;
+use censusindex_ipc::protocol::{item, parse_reply, req, sort, Reply, ReplyItem};
+use censusindex_ipc::server::{serve, Searcher, CLASS};
 
-/// Clase libre para el caso 7: no la usa ni Census ni el Everything real.
+/// Clase libre para el caso 7: no la usa ni CensusIndex ni el Everything real.
 const CUSTOM_CLASS: &str = "CENSUS_IPC_TEST_X";
 
 /// FILETIME de referencia: fechas fijas, cero reloj del sistema.
@@ -181,25 +181,25 @@ fn parse(raw: &[u8]) -> Reply {
 fn ipc_e2e_servidor_y_cliente_por_ventana() {
     // ------------------------------------------------------------------
     // Caso 1: antes de arrancar el servidor el cliente existe y no encuentra
-    // un demonio de Census. Nada de esto puede paniquear.
+    // un demonio de CensusIndex. Nada de esto puede paniquear.
     // ------------------------------------------------------------------
     let mut client = Client::new().expect("Client::new deberia crear su ventana de respuesta");
     assert!(
-        !client.census_is_running(),
+        !client.censusindex_is_running(),
         "la clase {CLASS} no deberia estar registrada todavia"
     );
 
-    // `find_server` cae a la clase de compatibilidad cuando Census no esta, y el
+    // `find_server` cae a la clase de compatibilidad cuando CensusIndex no esta, y el
     // Everything real registra esa clase en la maquina de cualquiera. Si hay uno
     // escuchando, "nadie contesta" no es una asercion que valga; lo que si vale
-    // es que nada de esto paniquea y de que sigue sin haber un demonio de Census.
+    // es que nada de esto paniquea y de que sigue sin haber un demonio de CensusIndex.
     // En una maquina limpia, en cambio, el cliente no tiene a quien escribirle.
     if client.is_server_running() {
         eprintln!("aviso: hay un IPC de compatibilidad (Everything real) escuchando; caso 1 en modo parcial");
         let _ = client.is_ready();
         let raw = client.query_raw("", sort::NAME_ASC, 0, 10, req::BASIC);
         assert!(
-            !client.census_is_running(),
+            !client.censusindex_is_running(),
             "lo que contesto no puede haber registrado {CLASS}"
         );
         if let Some(raw) = raw {
@@ -207,11 +207,11 @@ fn ipc_e2e_servidor_y_cliente_por_ventana() {
             assert_ne!(
                 ajeno.items,
                 expected(req::BASIC, false),
-                "antes de arrancar el servidor no puede responder el indice de Census"
+                "antes de arrancar el servidor no puede responder el indice de CensusIndex"
             );
         }
     } else {
-        assert!(!client.is_ready(), "sin Census no hay indice listo");
+        assert!(!client.is_ready(), "sin CensusIndex no hay indice listo");
         assert!(
             client
                 .query_raw("", sort::NAME_ASC, 0, 10, req::BASIC)
@@ -232,7 +232,7 @@ fn ipc_e2e_servidor_y_cliente_por_ventana() {
 
     // Caso 3: esperar (<= 5 s, durmiendo 10 ms por vuelta) a que la ventana este visible.
     let deadline = Instant::now() + Duration::from_secs(5);
-    while !client.census_is_running() {
+    while !client.censusindex_is_running() {
         if Instant::now() >= deadline {
             match done_rx.try_recv() {
                 Ok(Err(e)) => panic!("serve devolvio Err antes de publicarse: {e}"),

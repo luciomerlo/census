@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Avisos de seguridad (RUSTSEC) contra el Cargo.lock de Census.
+"""Avisos de seguridad (RUSTSEC) contra el Cargo.lock de CensusIndex.
 
 `cargo audit` no se puede instalar dentro del límite de tiempo del agente, así
 que esto hace lo mismo con la base oficial clonada:

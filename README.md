@@ -1,6 +1,6 @@
-# Census
+# CensusIndex
 
-<img src="assets/icon.svg" width="128" align="right" alt="Census">
+<img src="assets/icon.svg" width="128" align="right" alt="CensusIndex">
 
 Indexador de archivos para Windows (y versiones macOS/Linux en desarrollo): lee la MFT
 del volumen NTFS en bloque, una sola vez, y contesta consultas sobre millones de
@@ -8,12 +8,14 @@ archivos en milisegundos. Expuesto con una API
 mínima pensada para que otras apps (SortEverything, WizEverything) lo usen como base de
 datos, con un servidor MCP para que lo use una IA y con una ventana propia.
 
-Un censo enumera a todos los habitantes de un territorio; Census enumera a todos los
+Un censo enumera a todos los habitantes de un territorio; CensusIndex enumera a todos los
 archivos de tus unidades, y responde antes de que termines de escribir.
+
+> **Nombre.** El programa y el repositorio se llaman **CensusIndex** (binario `censusindex`, crates `censusindex-*`, paquete Android `com.censusindex.android`). Por compatibilidad con SortEverything, WizEverything y datos ya guardados **no cambian** estos identificadores: el protocolo `census-v1`, las variables `CENSUS_*`, la clase IPC `CENSUS_IPC`, los archivos de actividad `activity-Census.json` / `reindexar-Census.json` y, en Windows, `%LOCALAPPDATA%\Census`, `%APPDATA%\Census` y `HKCU\Software\Census`. Migrarlos requiere coordinar los tres chats y las apps cliente (sería `censusindex-v2`).
 
 ## Cómo funciona en cada plataforma
 
-Census es el mismo modelo en las tres plataformas: un índice plano en RAM, nombres
+CensusIndex es el mismo modelo en las tres plataformas: un índice plano en RAM, nombres
 como bytes, consultas por subárbol y un snapshot binario que se puede compartir. Lo
 que cambia es **cómo se consigue la lista de archivos** y **cómo se identifica el
 disco**. Cada plataforma vive en su propio crate para no arrastrar dependencias que
@@ -71,8 +73,8 @@ drives/<drive>`, iCloud, OneDrive y Dropbox; para rclone/FUSE hay alias manual
 (`cloud_aliases`). Mismo `cloud_id` ⇒ mismo volumen, aunque lo monte otro
 programa en otra PC; sin cuenta atribuible queda `posible_duplicado` y se avisa.
 
-Hoy funcionan `census version`, `census volumes`, `census cloud-id` y
-`census fold`. Faltan el snapshot `.cnx` por volumen, el catálogo, `export
+Hoy funcionan `censusindex version`, `censusindex volumes`, `censusindex cloud-id` y
+`censusindex fold`. Faltan el snapshot `.cnx` por volumen, el catálogo, `export
 --wcat`, FSEvents, la CLI completa y el servidor MCP/Tailscale. El detalle y el
 plan de pruebas en VM están en [`mac/PENDIENTE.md`](mac/PENDIENTE.md); el diseño
 en [`mac/README.md`](mac/README.md).
@@ -83,7 +85,7 @@ en [`mac/README.md`](mac/README.md).
 64 B, la arena de nombres plegada, el índice de hijos, la identidad de volúmenes y
 nube, las primitivas de identidad de hardware (`diskid.rs`, todavía sin integrar en
 `volumes`/`Root`) y la configuración de `pc_id`/offline/overrides. El binario WIP permite
-`census version`, `census cloud-id <provider> <cuenta> <unidad>` y `census mounts`.
+`censusindex version`, `censusindex cloud-id <provider> <cuenta> <unidad>` y `censusindex mounts`.
 
 Falta el recorrido `getdents64`/`statx`, el snapshot `.cns`, el parser de consultas,
 el catálogo multi-PC y el servidor HTTP/MCP. El detalle, las decisiones y los
@@ -99,7 +101,7 @@ programa que demostró que un índice completo del disco puede responder al inst
 
 **Everything es el programa que más recomendé en mi vida.** No hay exageración: durante
 años, cada vez que alguien dijo "no encuentro un archivo", la respuesta fue instalar
-Everything. Census existe porque esa idea —un índice que contiene todo— merece una API
+Everything. CensusIndex existe porque esa idea —un índice que contiene todo— merece una API
 que otras apps puedan usar como base de datos.
 
 - **El icono**: una lupa ámbar con un índice de filas dentro, en guiño a su lupa
@@ -138,7 +140,7 @@ Cambios de cada versión en [CHANGELOG.md](CHANGELOG.md).
 
 ## Unidades: todo lo disponible, cada una con su tipo
 
-Census no pide permiso por unidad: indexa **todo lo que esté montado**, y distingue el
+CensusIndex no pide permiso por unidad: indexa **todo lo que esté montado**, y distingue el
 tipo como WizTree.
 
 | Tipo | Cómo se detecta | Cómo se indexa |
@@ -151,11 +153,11 @@ tipo como WizTree.
 
 Si la MFT falla (por ejemplo, sin elevación), esa unidad **no se cae**: se recorre. Y la
 lista de exclusión de WizEverything se respeta como punto de partida, pero la decisión
-final es de Census (`%APPDATA%\Census\settings.ini`, misma clave y formato
+final es de CensusIndex (`%APPDATA%\Census\settings.ini`, misma clave y formato
 `excluded_drives=C:,H:`). Por defecto no se excluye nada.
 
 ```
-$ census drives
+$ censusindex drives
 unidad tipo     fs             total      libre  indexa    como
 C:     fijo     NTFS        237.4 GB    33.6 GB  mft
 G:     nube     FAT32       237.4 GB    31.9 GB  recorrido lucio@… - G…
@@ -166,15 +168,15 @@ G:     nube     FAT32       237.4 GB    31.9 GB  recorrido lucio@… - G…
 Si cargás una clave de Groq, la ventana acepta preguntas en vez de sintaxis:
 
 ```
-census key gsk_...      # se guarda cifrada con DPAPI para tu usuario de Windows
-census ask "¿cuáles son los archivos más grandes de este mes?"
+censusindex key gsk_...      # se guarda cifrada con DPAPI para tu usuario de Windows
+censusindex ask "¿cuáles son los archivos más grandes de este mes?"
 ```
 
 La lógica es la misma que la de WizEverything:
 
 - Se listan los modelos de la cuenta (`GET /models`), se descartan los que no son de chat
   y se ordenan por una lista de preferencia y, después, por cantidad de parámetros.
-- El modelo elegido responde **llamando a las herramientas de Census** (`search`,
+- El modelo elegido responde **llamando a las herramientas de CensusIndex** (`search`,
   `count`, `largest`, `recent`, `stats`), hasta 8 pasos; nunca inventa números.
 - Si un modelo devuelve 429 o se quedó sin cuota (se lee en las cabeceras
   `x-ratelimit-*`), se reintenta con el siguiente. Sólo una clave inválida corta.
@@ -184,13 +186,13 @@ La lógica es la misma que la de WizEverything:
 
 ## Como herramienta para una IA (MCP)
 
-`census mcp` habla MCP por stdio, así que cualquier agente puede consultar el índice como
+`censusindex mcp` habla MCP por stdio, así que cualquier agente puede consultar el índice como
 una herramienta más. No escribe nada: todo es consulta.
 
 ```json
 {
   "mcpServers": {
-    "census": { "command": "C:\\ruta\\a\\census.exe", "args": ["mcp"] }
+    "censusindex": { "command": "C:\\ruta\\a\\censusindex.exe", "args": ["mcp"] }
   }
 }
 ```
@@ -203,7 +205,7 @@ una herramienta más. No escribe nada: todo es consulta.
 | `recent` | Los modificados más recientemente. |
 | `stats` | Estado del índice: nodos, archivos, carpetas, de dónde salen los datos. |
 
-Si el cliente MCP no corre elevado, arrancá `census serve` como administrador: `census mcp`
+Si el cliente MCP no corre elevado, arrancá `censusindex serve` como administrador: `censusindex mcp`
 lo detecta por IPC y usa ese índice en vez de intentar leer la MFT.
 
 ## Qué hace
@@ -223,15 +225,15 @@ lo detecta por IPC y usa ese índice en vez de intentar leer la MFT.
 
 | Comando | Qué hace |
 |---|---|
-| `census index` | Construye el índice de todas las unidades y guarda el snapshot. |
-| `census query [consulta]` | Consulta el índice (`--volume C`, `--root <dir>`). |
-| `census drives` | Unidades, tipo, sistema de archivos y cómo se indexarían. |
-| `census bench` | Mide carga y consultas sobre el volumen real. |
-| `census serve` | Demonio IPC para las apps (requiere elevación para la MFT). |
-| `census mcp` | Servidor MCP por stdio. |
-| `census gui [--theme dark\|light\|contrast]` | Ventana. |
-| `census ask "<pregunta>"` | Lenguaje natural con Groq. |
-| `census key <clave>` | Guarda (o borra, con `--clear`) la clave de Groq cifrada. |
+| `censusindex index` | Construye el índice de todas las unidades y guarda el snapshot. |
+| `censusindex query [consulta]` | Consulta el índice (`--volume C`, `--root <dir>`). |
+| `censusindex drives` | Unidades, tipo, sistema de archivos y cómo se indexarían. |
+| `censusindex bench` | Mide carga y consultas sobre el volumen real. |
+| `censusindex serve` | Demonio IPC para las apps (requiere elevación para la MFT). |
+| `censusindex mcp` | Servidor MCP por stdio. |
+| `censusindex gui [--theme dark\|light\|contrast]` | Ventana. |
+| `censusindex ask "<pregunta>"` | Lenguaje natural con Groq. |
+| `censusindex key <clave>` | Guarda (o borra, con `--clear`) la clave de Groq cifrada. |
 
 ## Qué queda afuera a propósito
 
@@ -249,9 +251,9 @@ sort/size/date* · los ~200 ajustes del `.ini` · el servidor HTTP/ETP y `es.exe
 
 | Elemento | Valor |
 |---|---|
-| Producto | **Census** |
-| Binario | `census.exe` |
-| Crate | `census-core` (el nombre `census` ya está tomado en crates.io) |
+| Producto | **CensusIndex** |
+| Binario | `censusindex.exe` |
+| Crate | `censusindex-core` (el nombre `censusindex` ya está tomado en crates.io) |
 | Base por volumen | `%LOCALAPPDATA%\Census\C.wcat` |
 | Clase IPC | `CENSUS_IPC` |
 | Servicio | `CensusIndex` |
@@ -273,7 +275,7 @@ registro, ni el servicio, ni el icono.
 
 ## Rendimiento medido
 
-Medido con `census bench` en un equipo real (NVMe WD SN740, 15 GB de RAM), volumen `C:`
+Medido con `censusindex bench` en un equipo real (NVMe WD SN740, 15 GB de RAM), volumen `C:`
 con **1.868.924** registros de MFT, 1.274.814 archivos y 315.052 carpetas:
 
 | Métrica | Valor |

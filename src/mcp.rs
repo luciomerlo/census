@@ -13,8 +13,8 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
 
-use census_ipc::protocol;
-use census_ipc::Client;
+use censusindex_ipc::protocol;
+use censusindex_ipc::Client;
 
 use crate::query::Sort;
 use crate::time::filetime_to_unix;
@@ -59,7 +59,7 @@ impl Backend {
             .unwrap_or(false);
         if !force_local {
             if let Ok(client) = Client::new() {
-                if client.census_is_running() && client.is_ready() {
+                if client.censusindex_is_running() && client.is_ready() {
                     return Ok(Backend::Ipc(Mutex::new(client)));
                 }
             }
@@ -74,7 +74,7 @@ impl Backend {
 
     pub fn describe(&self) -> String {
         match self {
-            Backend::Ipc(_) => "backend: demonio Census por IPC".to_string(),
+            Backend::Ipc(_) => "backend: demonio CensusIndex por IPC".to_string(),
             Backend::Local { index, .. } => format!(
                 "backend: índice local (volumen {}, {} nodos)",
                 index.letter,
@@ -289,7 +289,7 @@ pub(crate) fn tools() -> Value {
     json!({"tools": [
         {
             "name": "search",
-            "description": "Busca archivos y carpetas en el indice de Census. Acepta la misma sintaxis que las apps: terminos sueltos, \"path:\\\"C:\\\\dir\\\"\", file:, folder:, ext:rs,toml, size:>10mb, dm:today, rc:>=2024-01-31T10:00:00",
+            "description": "Busca archivos y carpetas en el indice de CensusIndex. Acepta la misma sintaxis que las apps: terminos sueltos, \"path:\\\"C:\\\\dir\\\"\", file:, folder:, ext:rs,toml, size:>10mb, dm:today, rc:>=2024-01-31T10:00:00",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -479,7 +479,7 @@ pub fn serve_stdio(backend: Backend) -> Result<(), String> {
                 Ok(json!({
                     "protocolVersion": version,
                     "capabilities": {"tools": {"listChanged": false}},
-                    "serverInfo": {"name": "census", "version": env!("CARGO_PKG_VERSION")},
+                    "serverInfo": {"name": "censusindex", "version": env!("CARGO_PKG_VERSION")},
                     "instructions": "Indice instantaneo del disco. Usa search para encontrar archivos por nombre, carpeta, extension, tamano o fecha; count para saber cuantos hay; largest y recent para rankings; stats para ver el estado del indice."
                 }))
             }

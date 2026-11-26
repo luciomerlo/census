@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Firma Developer ID y notariza Census.app. Requiere:
+# Firma Developer ID y notariza CensusIndex.app. Requiere:
 #   MACOS_SIGN_IDENTITY, APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -10,8 +10,8 @@ done
 
 ./scripts/package.sh "${1:-universal}"
 
-APP="dist/Census.app"
-ZIP="dist/Census-notarize.zip"
+APP="dist/CensusIndex.app"
+ZIP="dist/CensusIndex-notarize.zip"
 ditto -c -k --keepParent "$APP" "$ZIP"
 xcrun notarytool submit "$ZIP" \
   --apple-id "$APPLE_ID" \

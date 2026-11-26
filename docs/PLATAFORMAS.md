@@ -1,4 +1,4 @@
-# Acuerdo entre los chats de Census (Windows / macOS / Linux)
+# Acuerdo entre los chats de CensusIndex (Windows / macOS / Linux)
 
 Fecha: 2026-11-22. Base: `cbb341a`. Este documento es el contrato; si algo no
 está acá, no está acordado.
@@ -17,7 +17,7 @@ compila en macOS ni Linux. Forzar un core portable ahora obliga a refactorizar
 `Index`/`snapshot` y pone en riesgo C2 (journal en caliente).
 
 Los tres crates comparten **contrato de tipos y de wire**, no código. Si más
-adelante se extrae un `census-core` portable, los dos fuentes se adaptan: el
+adelante se extrae un `censusindex-core` portable, los dos fuentes se adaptan: el
 contrato de abajo es el que hay que respetar.
 
 ## 2. Fuente de nodos: por lotes, no `Vec` completa
@@ -157,7 +157,7 @@ mismo SSD son volúmenes distintos).
   bytes, multi-raíz, `pc_id`, `volume_id`, `Marca` y `content_hash`. El hub los
   guarda **opacos**.
 - Para que el core Windows verifique y para offline entre plataformas existe
-  `census export --wcat`: produce un `C.wcat` v3 exacto (nombres UTF-16LE,
+  `censusindex export --wcat`: produce un `C.wcat` v3 exacto (nombres UTF-16LE,
   letras sintéticas) más un `manifest.json` al lado con:
   `letter -> { root_path, volume_id, Marca, content_hash, platform }`.
 - **Las letras sintéticas tienen que ser estables**: derivadas de `volume_id`

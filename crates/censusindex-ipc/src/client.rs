@@ -27,7 +27,7 @@ mod win {
         s.encode_utf16().chain(std::iter::once(0)).collect()
     }
 
-    /// Orden de búsqueda: primero Census, después el Everything real.
+    /// Orden de búsqueda: primero CensusIndex, después el Everything real.
     pub fn find_server() -> HWND {
         for cls in [CLASS, COMPAT_CLASS] {
             let c = wide(cls);
@@ -111,8 +111,8 @@ mod win {
         }
 
         /// Sólo mira la clase propia: si esto es false, lo que haya es el
-        /// Everything real, no un demonio de Census.
-        pub fn census_is_running(&self) -> bool {
+        /// Everything real, no un demonio de CensusIndex.
+        pub fn censusindex_is_running(&self) -> bool {
             let c = wide(CLASS);
             !unsafe { FindWindowW(c.as_ptr(), std::ptr::null()) }.is_null()
         }
@@ -246,6 +246,6 @@ pub struct Client;
 #[cfg(not(windows))]
 impl Client {
     pub fn new() -> Result<Self, String> {
-        Err("IPC de Census sólo existe en Windows".into())
+        Err("IPC de CensusIndex sólo existe en Windows".into())
     }
 }

@@ -1,6 +1,6 @@
-# Census Core v1 — contrato mínimo
+# CensusIndex Core v1 — contrato mínimo
 
-Census es la **base de datos madre** de las demás aplicaciones (SortEverything,
+CensusIndex es la **base de datos madre** de las demás aplicaciones (SortEverything,
 WizEverything, Ocupa y cualquier cliente futuro). No es una app de escritorio
 con funciones propias: indexa una vez y ofrece consultas de sólo lectura con un
 contrato estable.
@@ -15,7 +15,7 @@ parte del producto.
   lee el snapshot ni conoce su formato.
 - Consultas rápidas por nombre y ruta, más listados de volúmenes y estadísticas.
 - La misma semántica y el mismo JSON en Windows, macOS y Linux.
-- Sólo lectura. Census no mueve, renombra ni borra archivos.
+- Sólo lectura. CensusIndex no mueve, renombra ni borra archivos.
 
 ## Fuera de v1
 
@@ -33,12 +33,12 @@ Cinco comandos de usuario y un daemon:
 
 | Comando | Para qué |
 |---|---|
-| `census index [ruta...]` | Indexa los volúmenes locales montados, o las rutas dadas, y guarda el snapshot. |
-| `census query <texto>` | Busca por nombre/ruta. Uso local y de diagnóstico. |
-| `census top [N]` | Archivos más grandes. |
-| `census stats` | Estado y tamaño del índice. |
-| `census volumes` | Volúmenes indexados y su identidad. |
-| `census serve` | Levanta la API HTTP de sólo lectura para las apps. |
+| `censusindex index [ruta...]` | Indexa los volúmenes locales montados, o las rutas dadas, y guarda el snapshot. |
+| `censusindex query <texto>` | Busca por nombre/ruta. Uso local y de diagnóstico. |
+| `censusindex top [N]` | Archivos más grandes. |
+| `censusindex stats` | Estado y tamaño del índice. |
+| `censusindex volumes` | Volúmenes indexados y su identidad. |
+| `censusindex serve` | Levanta la API HTTP de sólo lectura para las apps. |
 
 `query`, `top`, `stats` y `volumes` aceptan `--json`. El JSON va a stdout y los
 diagnósticos a stderr; con `--json` no se imprime texto humano.
@@ -150,7 +150,7 @@ GET /v1/stats
 ## Errores
 
 - `query`, `top`, `stats` o `volumes` sin snapshot: exit 2 y stderr
-  `no hay índice; corré census index`.
+  `no hay índice; corré censusindex index`.
 - `index` sin volúmenes indexables: exit 1.
 - API sin índice: `503` con `{"error":"no_index"}`.
 - API con token y sin `Authorization: Bearer`: `401`.
@@ -171,5 +171,5 @@ documenta como hecha hasta que pase las pruebas.
 
 Cualquier cambio a campos, endpoints o semántica requiere acuerdo de los tres
 chats de plataforma y del cliente que lo consume, y sube la versión
-(`census-v2`). Agregar un campo opcional no rompe; cambiar un nombre o un tipo,
+(`censusindex-v2`). Agregar un campo opcional no rompe; cambiar un nombre o un tipo,
 sí.

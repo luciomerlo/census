@@ -9,11 +9,11 @@ fn main() {
     }
     let mut res = winresource::WindowsResource::new();
     res.set_icon("assets/icon.ico");
-    res.set("ProductName", "Census");
-    res.set("FileDescription", "Census - indice instantaneo de archivos");
+    res.set("ProductName", "CensusIndex");
+    res.set("FileDescription", "CensusIndex - indice instantaneo de archivos");
     res.set("CompanyName", "Lucio Merlo");
     res.set("LegalCopyright", "MIT");
-    res.set("OriginalFilename", "census.exe");
+    res.set("OriginalFilename", "censusindex.exe");
     if let Err(e) = res.compile() {
         // No romper el build por el icono: se avisa y se sigue.
         println!("cargo:warning=no se pudo embeber el icono: {e}");

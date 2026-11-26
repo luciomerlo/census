@@ -51,9 +51,9 @@ jobs:
       - name: Empaquetar
         run: |
           VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' linux/Cargo.toml | head -1)"
-          BIN="census-$VERSION-linux-${{ matrix.arch }}"
+          BIN="censusindex-$VERSION-linux-${{ matrix.arch }}"
           mkdir -p dist
-          cp linux/target/release/census "dist/$BIN"
+          cp linux/target/release/censusindex "dist/$BIN"
           chmod +x "dist/$BIN"
           tar -czf "dist/$BIN.tar.gz" -C dist "$BIN"
           (cd dist && sha256sum "$BIN" "$BIN.tar.gz" > "$BIN.sha256")
@@ -62,9 +62,9 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: census-linux-${{ matrix.arch }}
+          name: censusindex-linux-${{ matrix.arch }}
           path: |
-            dist/census-*-linux-${{ matrix.arch }}
-            dist/census-*-linux-${{ matrix.arch }}.tar.gz
-            dist/census-*-linux-${{ matrix.arch }}.sha256
+            dist/censusindex-*-linux-${{ matrix.arch }}
+            dist/censusindex-*-linux-${{ matrix.arch }}.tar.gz
+            dist/censusindex-*-linux-${{ matrix.arch }}.sha256
           if-no-files-found: error

@@ -1,4 +1,4 @@
-//! Puente JNI hacia `com.census.android.Native`. Todo devuelve un `String`
+//! Puente JNI hacia `com.censusindex.android.Native`. Todo devuelve un `String`
 //! JSON (`{"error": "..."}` si falla) para que Kotlin no maneje excepciones
 //! nativas. El `handle` es un `Arc<Engine>` entregado por `nativeOpen`.
 
@@ -33,7 +33,7 @@ unsafe fn eng(h: jlong) -> Option<&'static Arc<Engine>> {
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_census_android_Native_nativeOpen(
+pub extern "system" fn Java_com_censusindex_android_Native_nativeOpen(
     mut env: JNIEnv,
     _c: JClass,
     dir: JString,
@@ -45,7 +45,7 @@ pub extern "system" fn Java_com_census_android_Native_nativeOpen(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_census_android_Native_nativeSetVolumes(
+pub extern "system" fn Java_com_censusindex_android_Native_nativeSetVolumes(
     mut env: JNIEnv,
     _c: JClass,
     h: jlong,
@@ -60,7 +60,7 @@ pub extern "system" fn Java_com_census_android_Native_nativeSetVolumes(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_census_android_Native_nativeFull(
+pub extern "system" fn Java_com_censusindex_android_Native_nativeFull(
     mut env: JNIEnv,
     _c: JClass,
     h: jlong,
@@ -72,7 +72,7 @@ pub extern "system" fn Java_com_census_android_Native_nativeFull(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_census_android_Native_nativeSweep(
+pub extern "system" fn Java_com_censusindex_android_Native_nativeSweep(
     mut env: JNIEnv,
     _c: JClass,
     h: jlong,
@@ -85,7 +85,7 @@ pub extern "system" fn Java_com_census_android_Native_nativeSweep(
 
 /// `dirs_json`: arreglo JSON de rutas absolutas de carpetas sucias.
 #[no_mangle]
-pub extern "system" fn Java_com_census_android_Native_nativeDirty(
+pub extern "system" fn Java_com_censusindex_android_Native_nativeDirty(
     mut env: JNIEnv,
     _c: JClass,
     h: jlong,
@@ -103,7 +103,7 @@ pub extern "system" fn Java_com_census_android_Native_nativeDirty(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_census_android_Native_nativeSearch(
+pub extern "system" fn Java_com_censusindex_android_Native_nativeSearch(
     mut env: JNIEnv,
     _c: JClass,
     h: jlong,
@@ -118,7 +118,7 @@ pub extern "system" fn Java_com_census_android_Native_nativeSearch(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_census_android_Native_nativeStats(
+pub extern "system" fn Java_com_censusindex_android_Native_nativeStats(
     mut env: JNIEnv,
     _c: JClass,
     h: jlong,
@@ -131,7 +131,7 @@ pub extern "system" fn Java_com_census_android_Native_nativeStats(
 
 /// Bloquea hasta que el servidor muera: Kotlin lo llama desde un hilo propio.
 #[no_mangle]
-pub extern "system" fn Java_com_census_android_Native_nativeServe(
+pub extern "system" fn Java_com_censusindex_android_Native_nativeServe(
     mut env: JNIEnv,
     _c: JClass,
     h: jlong,
@@ -148,7 +148,7 @@ pub extern "system" fn Java_com_census_android_Native_nativeServe(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_census_android_Native_nativeClose(
+pub extern "system" fn Java_com_censusindex_android_Native_nativeClose(
     _e: JNIEnv,
     _c: JClass,
     h: jlong,
@@ -165,7 +165,7 @@ fn with<F: FnOnce(&Arc<Engine>) -> Result<Value, String>>(h: jlong, f: F) -> Res
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_census_android_Native_nativeDeviceInfo(
+pub extern "system" fn Java_com_censusindex_android_Native_nativeDeviceInfo(
     mut env: JNIEnv,
     _c: JClass,
     h: jlong,
@@ -176,7 +176,7 @@ pub extern "system" fn Java_com_census_android_Native_nativeDeviceInfo(
 
 /// `""` vuelve al nombre del sistema.
 #[no_mangle]
-pub extern "system" fn Java_com_census_android_Native_nativeSetDeviceName(
+pub extern "system" fn Java_com_censusindex_android_Native_nativeSetDeviceName(
     mut env: JNIEnv,
     _c: JClass,
     h: jlong,
@@ -188,7 +188,7 @@ pub extern "system" fn Java_com_census_android_Native_nativeSetDeviceName(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_census_android_Native_nativeAiGet(
+pub extern "system" fn Java_com_censusindex_android_Native_nativeAiGet(
     mut env: JNIEnv,
     _c: JClass,
     h: jlong,
@@ -198,7 +198,7 @@ pub extern "system" fn Java_com_census_android_Native_nativeAiGet(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_census_android_Native_nativeAiSet(
+pub extern "system" fn Java_com_censusindex_android_Native_nativeAiSet(
     mut env: JNIEnv,
     _c: JClass,
     h: jlong,
@@ -210,7 +210,7 @@ pub extern "system" fn Java_com_census_android_Native_nativeAiSet(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_census_android_Native_nativeAiModels(
+pub extern "system" fn Java_com_censusindex_android_Native_nativeAiModels(
     mut env: JNIEnv,
     _c: JClass,
     h: jlong,
@@ -223,7 +223,7 @@ pub extern "system" fn Java_com_census_android_Native_nativeAiModels(
 
 /// Bloquea por red: Kotlin lo llama desde un hilo de fondo.
 #[no_mangle]
-pub extern "system" fn Java_com_census_android_Native_nativeAsk(
+pub extern "system" fn Java_com_censusindex_android_Native_nativeAsk(
     mut env: JNIEnv,
     _c: JClass,
     h: jlong,
@@ -232,5 +232,62 @@ pub extern "system" fn Java_com_census_android_Native_nativeAsk(
 ) -> jstring {
     let q = s(&mut env, &question);
     let r = with(h, |e| e.ask(&q, spanish != 0));
+    res(&mut env, r)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_censusindex_android_Native_nativeVolumesUpdate(
+    mut env: JNIEnv,
+    _c: JClass,
+    h: jlong,
+    volumes: JString,
+) -> jstring {
+    let v = s(&mut env, &volumes);
+    let r = with(h, |e| e.volumes_update(&v));
+    res(&mut env, r)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_censusindex_android_Native_nativeSetPolicy(
+    mut env: JNIEnv,
+    _c: JClass,
+    h: jlong,
+    volume_id: JString,
+    policy: JString,
+) -> jstring {
+    let (v, p) = (s(&mut env, &volume_id), s(&mut env, &policy));
+    let r = with(h, |e| e.set_policy(&v, &p));
+    res(&mut env, r)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_censusindex_android_Native_nativePolicyGet(
+    mut env: JNIEnv,
+    _c: JClass,
+    h: jlong,
+) -> jstring {
+    let r = with(h, |e| Ok(e.policy_get()));
+    res(&mut env, r)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_censusindex_android_Native_nativeIndexOnce(
+    mut env: JNIEnv,
+    _c: JClass,
+    h: jlong,
+    volume_id: JString,
+) -> jstring {
+    let v = s(&mut env, &volume_id);
+    let r = with(h, |e| e.index_once(&v));
+    res(&mut env, r)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_censusindex_android_Native_nativeIndexPending(
+    mut env: JNIEnv,
+    _c: JClass,
+    h: jlong,
+) -> jstring {
+    let r = with(h, |e| e.index_pending());
     res(&mut env, r)
 }

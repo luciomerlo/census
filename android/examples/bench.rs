@@ -1,14 +1,14 @@
 //! Mide el costo de cada modo sobre un arbol sintetico (en esta maquina, NO en
 //! un telefono): `cargo run --release --example bench -- 20000 10`
-use census::volumes::Mount;
-use census_android::delta::{rescan, Mode, Options};
+use censusindex::volumes::Mount;
+use censusindex_android::delta::{rescan, Mode, Options};
 use std::{fs, path::PathBuf, time::Instant};
 
 fn main() {
     let a: Vec<String> = std::env::args().collect();
     let dirs: usize = a.get(1).and_then(|s| s.parse().ok()).unwrap_or(5000);
     let per: usize = a.get(2).and_then(|s| s.parse().ok()).unwrap_or(10);
-    let base = std::env::temp_dir().join(format!("census-bench-{}", std::process::id()));
+    let base = std::env::temp_dir().join(format!("censusindex-bench-{}", std::process::id()));
     let _ = fs::remove_dir_all(&base);
     for d in 0..dirs {
         let p = base.join(format!("g{}/d{}", d % 50, d));

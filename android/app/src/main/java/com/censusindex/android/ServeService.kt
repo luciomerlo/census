@@ -1,4 +1,4 @@
-package com.census.android
+package com.censusindex.android
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -20,16 +20,16 @@ class ServeService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val nm = getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel("serve", "Servidor Census", NotificationManager.IMPORTANCE_LOW))
+        nm.createNotificationChannel(NotificationChannel("serve", "Servidor CensusIndex", NotificationManager.IMPORTANCE_LOW))
         val n = Notification.Builder(this, "serve")
-            .setContentTitle("Census compartiendo el indice (solo lectura)")
+            .setContentTitle("CensusIndex compartiendo el indice (solo lectura)")
             .setSmallIcon(android.R.drawable.ic_menu_search)
             .setOngoing(true)
             .build()
         startForeground(1, n)
         val h = Indexer.handle(this)
         val token = Indexer.token(this)
-        thread(name = "census-http") {
+        thread(name = "censusindex-http") {
             // Con LAN exige token (contrato). Puerto ocupado => devuelve error y sale.
             Native.nativeServe(h, PORT, true, token)
             stopSelf()

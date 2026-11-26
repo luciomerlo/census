@@ -10,7 +10,7 @@
 //! * `ModelMode::Force` — usa el nombre tal cual, sin listar (APIs sin `/models`).
 //! * Fallback entre modelos y entre endpoints ante 429/5xx/timeout/vacio.
 //! * `tools=false` — para modelos sin llamadas a herramientas: el modelo solo
-//!   traduce la pregunta a una consulta de Census y el resultado se arma aca.
+//!   traduce la pregunta a una consulta de CensusIndex y el resultado se arma aca.
 //!
 //! Solo lectura: las herramientas consultan el indice, no tocan archivos.
 
@@ -440,7 +440,7 @@ fn cooling(model: &str) -> bool {
 
 pub fn tools_schema() -> Vec<Value> {
     let q = json!({"type":"string","description":
-        "Census query: free words match name or path; path:/dir ; ext:pdf ; size:>1000000 ; size:<500"});
+        "CensusIndex query: free words match name or path; path:/dir ; ext:pdf ; size:>1000000 ; size:<500"});
     let n = json!({"type":"integer","description":"max results (default 20, max 50)"});
     let f = |name: &str, desc: &str, props: Value| {
         json!({"type":"function","function":{"name":name,"description":desc,
@@ -535,7 +535,7 @@ fn system_prompt(ix: &Index, spanish: bool) -> String {
         "Respond in English, brief and concrete."
     };
     format!(
-        "You are the assistant of Census, an instant index of FILE AND FOLDER NAMES (no file \
+        "You are the assistant of CensusIndex, an instant index of FILE AND FOLDER NAMES (no file \
          contents) of the device \"{}\" ({}). Answer using the tools; never invent paths or \
          numbers. Sizes are bytes: show KB/MB/GB with one decimal. Tools are read-only. {lang}",
         ix.host.hostname, ix.host.os
@@ -1090,7 +1090,7 @@ mod tests {
 
     #[test]
     fn config_file_round_trip_has_private_permissions() {
-        let p = std::env::temp_dir().join(format!("census-ai-{}.json", std::process::id()));
+        let p = std::env::temp_dir().join(format!("censusindex-ai-{}.json", std::process::id()));
         let mut cfg = AiConfig::default();
         cfg.replace(vec![Endpoint::groq("gsk_1234567890")]).unwrap();
         cfg.save(&p).unwrap();

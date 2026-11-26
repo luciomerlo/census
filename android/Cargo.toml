@@ -1,19 +1,19 @@
 [package]
-name = "census-android"
+name = "censusindex-android"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Census para Android: nucleo nativo (reescaneo incremental, snapshot .cns, API v1) que carga la app Kotlin por JNI"
+description = "CensusIndex para Android: nucleo nativo (reescaneo incremental, snapshot .cns, API v1) que carga la app Kotlin por JNI"
 
 [lib]
-name = "census_android"
+name = "censusindex_android"
 path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Android es Linux: se reutiliza el walker, el indice, el snapshot .cns y la
 # API HTTP v1 del crate linux/ (mismo contrato, mismo formato de snapshot).
-census = { path = "../linux" }
+censusindex = { path = "../linux" }
 serde_json = "1"
 
 [target.'cfg(target_os = "android")'.dependencies]

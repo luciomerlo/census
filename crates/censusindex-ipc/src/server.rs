@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::protocol::{self, ReplyItem, Request, CAPS, IS_DB_LOADED};
 
-/// Clase propia. Es la que busca el cliente de Census y el shim.
+/// Clase propia. Es la que busca el cliente de CensusIndex y el shim.
 pub const CLASS: &str = "CENSUS_IPC";
 /// Clase de Everything: sólo se registra en modo compatibilidad y si está libre.
 pub const COMPAT_CLASS: &str = "EVERYTHING_TASKBAR_NOTIFICATION";
@@ -48,8 +48,8 @@ mod win {
     };
 
     /// Mensajes que un cliente de integridad media puede mandarle a un
-    /// `census serve` elevado. Si falta uno, UIPI lo bloquea con error 5 y la
-    /// app cree que Census no está corriendo.
+    /// `censusindex serve` elevado. Si falta uno, UIPI lo bloquea con error 5 y la
+    /// app cree que CensusIndex no está corriendo.
     pub const ALLOWED_FROM_LOWER_INTEGRITY: [u32; 3] =
         [WM_COPYDATA, WM_USER + IS_DB_LOADED, WM_USER + CAPS];
 
@@ -190,9 +190,9 @@ mod win {
             }
 
             // Un cliente de integridad media (WizEverything/SortEverything) debe
-            // poder consultar un `census serve` elevado. Sin esto, UIPI bloquea
+            // poder consultar un `censusindex serve` elevado. Sin esto, UIPI bloquea
             // WM_COPYDATA y también WM_USER+IS_DB_LOADED, y el cliente concluye
-            // "Census no está en ejecución" aunque el proceso esté vivo.
+            // "CensusIndex no está en ejecución" aunque el proceso esté vivo.
             //
             // Estos tres filtros no se sacan: sin ellos la integración con las
             // apps (que corren sin elevación) deja de funcionar. Lo cubre
@@ -237,7 +237,7 @@ pub use win::{serve, wide, ALLOWED_FROM_LOWER_INTEGRITY};
 
 #[cfg(not(windows))]
 pub fn serve(_searcher: Arc<dyn Searcher>, _classes: &[&str]) -> Result<String, String> {
-    Err("IPC de Census sólo existe en Windows".into())
+    Err("IPC de CensusIndex sólo existe en Windows".into())
 }
 
 /// Pedido ya validado, útil para el shim y para tests.

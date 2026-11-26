@@ -43,7 +43,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "census"
+name = "censusindex"
 version = "0.1.0"
 dependencies = [
  "libc",
@@ -57,10 +57,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "census-android"
+name = "censusindex-android"
 version = "0.1.0"
 dependencies = [
- "census",
+ "censusindex",
  "jni",
  "serde_json",
 ]

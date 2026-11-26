@@ -4,7 +4,7 @@
 //! WizEverything o SortEverything dejan de ver resultados. Los offsets no son
 //! negociables.
 
-use census_ipc::protocol::{self, item, req, sort, ReplyItem, Request};
+use censusindex_ipc::protocol::{self, item, req, sort, ReplyItem, Request};
 
 fn u32_at(b: &[u8], at: usize) -> u32 {
     u32::from_le_bytes(b[at..at + 4].try_into().unwrap())
@@ -307,7 +307,7 @@ fn empty_page_is_a_valid_reply() {
 
 #[test]
 fn reply_flags_only_announce_present_fields() {
-    use census_ipc::protocol::{caps, req};
+    use censusindex_ipc::protocol::{caps, req};
     // Pedir run_count no hace que venga: no lo tenemos.
     let asked = req::BASIC | req::RUN_COUNT;
     let present = caps::present(asked);
@@ -325,31 +325,31 @@ fn reply_flags_only_announce_present_fields() {
 
 #[test]
 fn capabilities_flag_partial_metadata() {
-    use census_ipc::protocol::caps;
+    use censusindex_ipc::protocol::caps;
     assert!(
         caps::has(caps::DEFAULT, caps::PARTIAL_METADATA),
-        "Census debe avisar que los metadatos son parciales"
+        "CensusIndex debe avisar que los metadatos son parciales"
     );
     assert!(caps::has(
         caps::DEFAULT,
-        census_ipc::protocol::req::DATE_ACCESSED
+        censusindex_ipc::protocol::req::DATE_ACCESSED
     ));
     assert!(!caps::has(
         caps::DEFAULT,
-        census_ipc::protocol::req::RUN_COUNT
+        censusindex_ipc::protocol::req::RUN_COUNT
     ));
     // Máscara de mensaje estable: WM_USER + 402.
-    assert_eq!(census_ipc::protocol::CAPS, 402);
+    assert_eq!(censusindex_ipc::protocol::CAPS, 402);
 }
 
 #[test]
 fn messages_a_medium_client_needs_are_filtered() {
     // Sin estos tres filtros, un cliente sin elevación no puede hablar con
-    // `census serve` elevado (UIPI devuelve error 5). Ver docs/WIZE-INTEGRATION.md.
-    use census_ipc::protocol::{CAPS, IS_DB_LOADED};
-    let allowed = census_ipc::server::ALLOWED_FROM_LOWER_INTEGRITY;
+    // `censusindex serve` elevado (UIPI devuelve error 5). Ver docs/WIZE-INTEGRATION.md.
+    use censusindex_ipc::protocol::{CAPS, IS_DB_LOADED};
+    let allowed = censusindex_ipc::server::ALLOWED_FROM_LOWER_INTEGRITY;
     assert_eq!(allowed.len(), 3);
-    assert!(allowed.contains(&census_ipc::protocol::WM_COPYDATA));
+    assert!(allowed.contains(&censusindex_ipc::protocol::WM_COPYDATA));
     assert!(allowed.contains(&(0x0400 + IS_DB_LOADED)));
     assert!(allowed.contains(&(0x0400 + CAPS)));
 }

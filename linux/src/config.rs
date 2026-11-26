@@ -262,7 +262,7 @@ pub fn data_dir() -> PathBuf {
     }
     if let Ok(d) = std::env::var("XDG_DATA_HOME") {
         if !d.trim().is_empty() {
-            return PathBuf::from(d).join("census");
+            return PathBuf::from(d).join("censusindex");
         }
     }
     #[cfg(windows)]
@@ -271,7 +271,7 @@ pub fn data_dir() -> PathBuf {
             return PathBuf::from(d).join("Census");
         }
     }
-    home().join(".local/share/census")
+    home().join(".local/share/censusindex")
 }
 
 pub fn config_dir() -> PathBuf {
@@ -280,7 +280,7 @@ pub fn config_dir() -> PathBuf {
     }
     if let Ok(d) = std::env::var("XDG_CONFIG_HOME") {
         if !d.trim().is_empty() {
-            return PathBuf::from(d).join("census");
+            return PathBuf::from(d).join("censusindex");
         }
     }
     #[cfg(windows)]
@@ -289,7 +289,7 @@ pub fn config_dir() -> PathBuf {
             return PathBuf::from(d).join("Census");
         }
     }
-    home().join(".config/census")
+    home().join(".config/censusindex")
 }
 
 pub fn config_path() -> PathBuf {

@@ -1,4 +1,4 @@
-package com.census.android
+package com.censusindex.android
 
 import android.app.job.JobInfo
 import android.app.job.JobParameters
@@ -19,7 +19,7 @@ import kotlin.concurrent.thread
 class MediaChangeJob : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         schedule(this)
-        thread(name = "census-media-delta") {
+        thread(name = "censusindex-media-delta") {
             if (Perms.hasAllFiles()) runCatching { Indexer.onMediaChange(applicationContext) }
             jobFinished(params, false)
         }

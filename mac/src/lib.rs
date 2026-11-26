@@ -1,4 +1,4 @@
-//! Census para macOS (Intel y Apple silicon).
+//! CensusIndex para macOS (Intel y Apple silicon).
 //!
 //! Índice de archivos en RAM con snapshot binario, consultas estilo
 //! Everything, catálogo de índices de varias PC por Tailscale y servidor MCP.

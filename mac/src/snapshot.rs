@@ -148,7 +148,7 @@ impl fmt::Display for SnapshotError {
             }
             SnapshotError::Version(v) => write!(
                 f,
-                "versión de snapshot desconocida: {v} (este census lee v{FORMAT_VERSION})"
+                "versión de snapshot desconocida: {v} (este censusindex lee v{FORMAT_VERSION})"
             ),
             SnapshotError::Checksum => f.write_str(
                 "checksum del snapshot no coincide: el archivo está alterado o incompleto",
@@ -1092,7 +1092,7 @@ mod tests {
         static N: AtomicU32 = AtomicU32::new(0);
         let n = N.fetch_add(1, Ordering::Relaxed);
         let dir =
-            std::env::temp_dir().join(format!("census-cnx-{}-{tag}-{n}", std::process::id()));
+            std::env::temp_dir().join(format!("censusindex-cnx-{}-{tag}-{n}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("crear dir temporal");
         dir

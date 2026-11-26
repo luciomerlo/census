@@ -1,4 +1,4 @@
-# Census para Linux
+# CensusIndex para Linux
 
 Índice de archivos en RAM, snapshot global y API HTTP de sólo lectura. Corre en
 **x86_64 (Intel/AMD)** y **aarch64 (ARM64)** Linux. Un solo binario estático:
@@ -7,23 +7,23 @@ no necesita glibc, librerías ni Python.
 ## v1 en 30 segundos
 
 ```bash
-census index                 # montajes locales (sin red/nube)
-census query informe --ext pdf --sort size --limit 20
-census top 20
-census stats
-census volumes --json
-census serve --port 8787    # API en http://127.0.0.1:8787/v1/
+censusindex index                 # montajes locales (sin red/nube)
+censusindex query informe --ext pdf --sort size --limit 20
+censusindex top 20
+censusindex stats
+censusindex volumes --json
+censusindex serve --port 8787    # API en http://127.0.0.1:8787/v1/
 ```
 
 `index` sin argumentos indexa los volúmenes locales montados (fijos y
 extraíbles), nunca red/nube por defecto. Para una carpeta o una nube montada:
 
 ```bash
-census index /home/lucio/Documentos
-census index /mnt/google-drive
+censusindex index /home/lucio/Documentos
+censusindex index /mnt/google-drive
 ```
 
-El snapshot vive en `$XDG_DATA_HOME/census/index.cns` (o
+El snapshot vive en `$XDG_DATA_HOME/censusindex/index.cns` (o
 `$CENSUS_DATA_DIR/index.cns`) y se reemplaza atómicamente. `index` recorre con
 `getdents64` + `statx` y guarda nombres no UTF-8 como bytes; no borra, mueve ni
 renombra nada.
@@ -37,8 +37,8 @@ para que el mismo artefacto corra en cualquier distro.
 ```bash
 cd linux
 ./scripts/build-linux.sh
-# dist/census-0.1.0-linux-x86_64.tar.gz
-# dist/census-0.1.0-linux-aarch64.tar.gz
+# dist/censusindex-0.1.0-linux-x86_64.tar.gz
+# dist/censusindex-0.1.0-linux-aarch64.tar.gz
 # dist/SHA256SUMS.txt
 ```
 
@@ -52,10 +52,10 @@ Sólo un target:
 Instalación desde el tarball:
 
 ```bash
-tar xzf census-0.1.0-linux-x86_64.tar.gz -C /tmp/census
-/tmp/census/install.sh          # ~/.local/bin/census + unidad systemd
-census index
-census serve --port 8787
+tar xzf censusindex-0.1.0-linux-x86_64.tar.gz -C /tmp/censusindex
+/tmp/censusindex/install.sh          # ~/.local/bin/censusindex + unidad systemd
+censusindex index
+censusindex serve --port 8787
 ```
 
 En ARM64 el binario es `aarch64-unknown-linux-musl`; en Intel/AMD,

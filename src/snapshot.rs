@@ -1041,7 +1041,7 @@ mod tests {
     impl TempFile {
         fn new(nombre: &str) -> Self {
             let p = std::env::temp_dir().join(format!(
-                "census_snap_test_{}_{}_{nombre}",
+                "censusindex_snap_test_{}_{}_{nombre}",
                 std::process::id(),
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)

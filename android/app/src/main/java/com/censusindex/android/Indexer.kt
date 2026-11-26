@@ -1,4 +1,4 @@
-package com.census.android
+package com.censusindex.android
 
 import android.content.Context
 import android.os.Build
@@ -31,7 +31,7 @@ object Indexer {
     fun init(ctx: Context): Long {
         if (handle != 0L) return handle
         app = ctx.applicationContext
-        val prefs = app.getSharedPreferences("census", Context.MODE_PRIVATE)
+        val prefs = app.getSharedPreferences("censusindex", Context.MODE_PRIVATE)
         // pc_id: 32 hex, generado una vez. No se usa ANDROID_ID (cambia al reinstalar).
         val pcId = prefs.getString("pc_id", null)
             ?: UUID.randomUUID().toString().replace("-", "").also { prefs.edit().putString("pc_id", it).apply() }
@@ -43,7 +43,7 @@ object Indexer {
     }
 
     fun token(ctx: Context): String {
-        val prefs = ctx.getSharedPreferences("census", Context.MODE_PRIVATE)
+        val prefs = ctx.getSharedPreferences("censusindex", Context.MODE_PRIVATE)
         return prefs.getString("token", null)
             ?: UUID.randomUUID().toString().replace("-", "").also { prefs.edit().putString("token", it).apply() }
     }
@@ -54,7 +54,7 @@ object Indexer {
     @Synchronized
     fun full(ctx: Context): JSONObject {
         val h = init(ctx)
-        Native.nativeSetVolumes(h, Volumes.json(app))
+        syncVolumes(h)
         val r = JSONObject(Native.nativeFull(h))
         if (!r.has("error")) MediaDelta(app).markSynced()
         return r
@@ -66,9 +66,12 @@ object Indexer {
         val h = init(ctx)
         val delta = MediaDelta(app)
         if (!delta.hasCursor()) return full(ctx)
-        Native.nativeSetVolumes(h, Volumes.json(app))
-        val res = delta.poll()
         val out = JSONObject()
+        // Un pendrive nuevo dispara MediaStore: se resuelve su politica primero.
+        if (syncVolumes(h).optJSONArray("to_index")?.length() ?: 0 > 0) {
+            out.put("new_volume", JSONObject(Native.nativeIndexPending(h)))
+        }
+        val res = delta.poll()
         if (res.dirtyDirs.isNotEmpty()) {
             out.put("dirty", JSONObject(Native.nativeDirty(h, MediaDelta.toJson(res.dirtyDirs))))
         }
@@ -82,9 +85,49 @@ object Indexer {
     @Synchronized
     fun sweep(ctx: Context): JSONObject {
         val h = init(ctx)
-        Native.nativeSetVolumes(h, Volumes.json(app))
+        syncVolumes(h)
         return JSONObject(Native.nativeSweep(h))
     }
+
+    /**
+     * Declara los volumenes montados y aplica la politica de extraibles. Si hay
+     * un volumen nuevo por el que preguntar, publica la notificacion.
+     */
+    @Synchronized
+    fun syncVolumes(h: Long): JSONObject {
+        val r = JSONObject(Native.nativeVolumesUpdate(h, Volumes.json(app)))
+        val ask = r.optJSONArray("ask")
+        val rows = r.optJSONArray("volumes")
+        if (ask != null && rows != null) {
+            for (i in 0 until ask.length()) {
+                for (j in 0 until rows.length()) {
+                    val v = rows.getJSONObject(j)
+                    if (v.getString("volume_id") == ask.getString(i)) VolumePrompt.show(app, v)
+                }
+            }
+        }
+        return r
+    }
+
+    /** Llamado al conectar/desconectar un volumen (callback del sistema). */
+    fun onVolumesChanged(ctx: Context): JSONObject {
+        val h = init(ctx)
+        val r = syncVolumes(h)
+        if ((r.optJSONArray("to_index")?.length() ?: 0) > 0) {
+            return JSONObject(Native.nativeIndexPending(h)).also { MediaDelta(app).markSynced() }
+        }
+        return r
+    }
+
+    fun setPolicy(ctx: Context, volumeId: String, policy: String): JSONObject =
+        JSONObject(Native.nativeSetPolicy(init(ctx), volumeId, policy))
+
+    fun policyGet(ctx: Context): JSONObject = JSONObject(Native.nativePolicyGet(init(ctx)))
+
+    fun indexOnce(ctx: Context, volumeId: String): JSONObject =
+        JSONObject(Native.nativeIndexOnce(init(ctx), volumeId))
+
+    fun indexPending(ctx: Context): JSONObject = JSONObject(Native.nativeIndexPending(init(ctx)))
 
     fun search(ctx: Context, q: String, limit: Int = 200): JSONObject =
         JSONObject(Native.nativeSearch(init(ctx), q, limit))
@@ -103,12 +146,12 @@ object Indexer {
         val req = PeriodicWorkRequestBuilder<SweepWorker>(6, TimeUnit.HOURS)
             .setConstraints(Constraints.Builder().setRequiresBatteryNotLow(true).build())
             .build()
-        WorkManager.getInstance(ctx).enqueueUniquePeriodicWork("census-sweep", ExistingPeriodicWorkPolicy.KEEP, req)
+        WorkManager.getInstance(ctx).enqueueUniquePeriodicWork("censusindex-sweep", ExistingPeriodicWorkPolicy.KEEP, req)
     }
 
     /** Barrido unico ~2 min despues; KEEP agrupa una rafaga de borrados en uno. */
     fun sweepSoon(ctx: Context) {
         val req = OneTimeWorkRequestBuilder<SweepWorker>().setInitialDelay(2, TimeUnit.MINUTES).build()
-        WorkManager.getInstance(ctx).enqueueUniqueWork("census-sweep-soon", ExistingWorkPolicy.KEEP, req)
+        WorkManager.getInstance(ctx).enqueueUniqueWork("censusindex-sweep-soon", ExistingWorkPolicy.KEEP, req)
     }
 }

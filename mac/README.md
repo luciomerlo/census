@@ -1,4 +1,4 @@
-# Census para macOS
+# CensusIndex para macOS
 
 Índice de archivos para macOS (Intel y Apple silicon). Lee el disco con
 `getattrlistbulk`, guarda un snapshot propio y contesta consultas en
@@ -18,7 +18,7 @@ detalle está en [PENDIENTE.md](PENDIENTE.md).
 2. **Indexar**: nodos planos + arena de nombres UTF-8 + `Compacto` de 12 B +
    hijos CSR + rangos de subárbol. Es la misma forma que Windows/Linux para que
    la consulta sea idéntica.
-3. **Consultar**: sintaxis de Census (`path:`, `file:`, `folder:`, `ext:`,
+3. **Consultar**: sintaxis de CensusIndex (`path:`, `file:`, `folder:`, `ext:`,
    `size:`, `dm:`, `rc:`, términos), orden y paginación.
 4. **Actualizar**: FSEvents dará un `eventId` durable y monótono por volumen,
    equivalente al USN Journal de NTFS. La `Marca` será
@@ -59,9 +59,9 @@ cargo build --release --target aarch64-apple-darwin
 ./scripts/build-apps.sh
 ```
 
-El binario queda en `target/<target>/release/census` y, para universal2, en
-`dist/census-universal`. `build-apps.sh` deja `dist/Census-Intel.app`,
-`dist/Census-AppleSilicon.app`, `dist/Census-universal.app` y sus `.zip` con
+El binario queda en `target/<target>/release/censusindex` y, para universal2, en
+`dist/censusindex-universal`. `build-apps.sh` deja `dist/CensusIndex-Intel.app`,
+`dist/CensusIndex-AppleSilicon.app`, `dist/CensusIndex-universal.app` y sus `.zip` con
 `SHA256SUMS.txt`.
 
 En Linux/Windows se puede verificar el código portable y el código macOS sin
@@ -88,19 +88,19 @@ con Linux y Windows.
 Cuando esté la CLI completa:
 
 ```bash
-census index                 # volúmenes locales; nube/red sólo con --include-*
-census query "informe"
-census top --n 20
-census export --format wcat --out ~/Desktop/Census.wcat
-census serve                 # loopback:8478
-census mcp                   # stdio para agentes
+censusindex index                 # volúmenes locales; nube/red sólo con --include-*
+censusindex query "informe"
+censusindex top --n 20
+censusindex export --format wcat --out ~/Desktop/CensusIndex.wcat
+censusindex serve                 # loopback:8478
+censusindex mcp                   # stdio para agentes
 ```
 
 ## Full Disk Access
 
 Para leer Mail, Messages, Safari y otras carpetas protegidas hay que darle
 Full Disk Access al binario o a la app en **Ajustes del Sistema › Privacidad y
-seguridad › Acceso total al disco**. Sin ese permiso Census indexa lo que puede
+seguridad › Acceso total al disco**. Sin ese permiso CensusIndex indexa lo que puede
 y lo informa; no pide `sudo` ni desactiva protecciones.
 
 ## Identidad y compatibilidad

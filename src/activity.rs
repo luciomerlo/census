@@ -1,4 +1,4 @@
-//! `activity-Census.json`: qué está haciendo Census, para Wiz y Sort.
+//! `activity-Census.json`: qué está haciendo CensusIndex, para Wiz y Sort.
 //!
 //! Contrato acordado por las tres apps: un archivo por app en
 //! `%LOCALAPPDATA%\WizeShared\`, cada una escribe **sólo** el suyo, con
@@ -6,7 +6,7 @@
 //! es el mismo que usa Sort (`core/activity.rs`): `pid`, `app`, `task`,
 //! `resources`, `roots`, `state`, `forced` y `heartbeat` en milisegundos.
 //!
-//! Census sólo anuncia el trabajo que **no** arrancó por sí solo: el replay
+//! CensusIndex sólo anuncia el trabajo que **no** arrancó por sí solo: el replay
 //! corto del journal al arrancar y los lotes de cambios que va aplicando. Las
 //! tareas pesadas siguen siendo siempre `forced: true`.
 
@@ -75,12 +75,12 @@ fn publicar_en(
     fs::rename(&tmp, &destino)
 }
 
-/// Marca que Census quedó quieto (sin journal, o al cerrar).
+/// Marca que CensusIndex quedó quieto (sin journal, o al cerrar).
 pub fn retirar() {
     let _ = publicar("idle", &[], &[], "idle");
 }
 
-/// Avisa que hace falta reindexar (lo consume el próximo `census index`).
+/// Avisa que hace falta reindexar (lo consume el próximo `censusindex index`).
 pub fn pedir_reindexado(motivo: &str) -> io::Result<PathBuf> {
     let dir = shared_dir();
     fs::create_dir_all(&dir)?;
@@ -94,7 +94,7 @@ pub fn pedir_reindexado(motivo: &str) -> io::Result<PathBuf> {
     Ok(path)
 }
 
-/// `true` si hay un pedido de reindexado pendiente (lo borra `census index`).
+/// `true` si hay un pedido de reindexado pendiente (lo borra `censusindex index`).
 pub fn reindexado_pendiente() -> Option<PathBuf> {
     let path = shared_dir().join("reindexar-Census.json");
     path.is_file().then_some(path)
@@ -142,7 +142,7 @@ mod tests {
 
     fn dir_temporal(nombre: &str) -> PathBuf {
         let dir =
-            std::env::temp_dir().join(format!("census-activity-{}-{}", nombre, std::process::id()));
+            std::env::temp_dir().join(format!("censusindex-activity-{}-{}", nombre, std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir

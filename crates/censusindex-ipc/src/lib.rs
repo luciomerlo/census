@@ -1,8 +1,8 @@
-//! Protocolo y transporte IPC de Census.
+//! Protocolo y transporte IPC de CensusIndex.
 //!
 //! - [`protocol`]: contrato de bytes (QUERY2W) compartido con las apps.
 //! - [`server`]: ventana oculta que responde consultas.
-//! - [`client`]: cliente que consulta a Census o al Everything real.
+//! - [`client`]: cliente que consulta a CensusIndex o al Everything real.
 
 pub mod client;
 pub mod protocol;

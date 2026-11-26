@@ -6,7 +6,7 @@
   `CENSUS_MMAP=0` fuerza el camino de copia. v3 se sigue leyendo.
 - `f6f0c06` `DiskHwId`/`volume_id`/`cloud_id` en `topology.rs`/`volumes.rs`:
   serial+vendor+modelo+capacidad, `serial_ambiguo`, `sin_identidad`, parseo de
-  etiqueta de Google Drive. `census drives` ya muestra la topología real.
+  etiqueta de Google Drive. `censusindex drives` ya muestra la topología real.
 - `0a9265e` `src/atlas.rs`: overrides (excluir/incluir/unir/separar) y selección
   offline tildada, con 8 tests. Falta el subcomando CLI.
 - `3a2de0b` CI ARM64 nativo (job `arm64` en `ci.yml`) + `tools/build-arm64.ps1`.
@@ -29,10 +29,10 @@
    misma disposición, no el mismo código.
 
 ## Checkout oficial
-- El repo vive en **C:/Users/Lucio/Desktop/Proyectos/census** (el scratch era
+- El repo vive en **C:/Users/Lucio/Desktop/Proyectos/censusindex** (el scratch era
   temporal). Mismo origin, master a nivel. Los commits previos siguen valiendo.
 
-- **`volumes --json` y `census atlas ...`**: el subagente había reescrito
+- **`volumes --json` y `censusindex atlas ...`**: el subagente había reescrito
   `main.rs` y la CLI quedaba colgada; se volvió a HEAD. Hay que re-agregar sólo
   los subcomandos, sin tocar el parseo existente (copia de la versión del
   subagente en `/tmp/main_delegate.rs`).
@@ -44,7 +44,7 @@
   verificar `serial`; si el driver NVMe exige `GENERIC_READ`, documentarlo.
 
 
-Estado al cerrar la ronda de coordinación entre los chats de Census (Windows,
+Estado al cerrar la ronda de coordinación entre los chats de CensusIndex (Windows,
 Mac, Linux). Último commit en master: `deb764d`.
 
 ## Acuerdo cerrado (no volver a discutir)
@@ -68,7 +68,7 @@ Mac, Linux). Último commit en master: `deb764d`.
    alineada permitida está acá.
 2. **`Latido::Compactar`** — `Overlay::compactar_con_tope()`,
    `vaciar_conservando_watermark()` y `activity::pedir_reindexado` existen, pero
-   el manejo en `hot.rs` / `census watch` quedó sin aplicar (skipped).
+   el manejo en `hot.rs` / `censusindex watch` quedó sin aplicar (skipped).
 3. **`topology.rs` no detecta discos físicos** en esta máquina ("sin discos
    fisicos visibles", incluso elevado). Sospecha: apertura `\\.\X:` con
    `FILE_READ_ATTRIBUTES` o el `IOCTL_STORAGE_GET_DEVICE_NUMBER`. Validar con
@@ -80,7 +80,7 @@ Mac, Linux). Último commit en master: `deb764d`.
    serial + vendor + model + capacidad por `IOCTL_STORAGE_QUERY_PROPERTY`,
    fallback GUID de disco, y `\\?\Volume{GUID}\` por
    `GetVolumeNameForVolumeMountPointW`. Detección de `serial_ambiguo`.
-7. **`cloud_id` para Google Drive** (§9): hoy `census drives` ve
+7. **`cloud_id` para Google Drive** (§9): hoy `censusindex drives` ve
    `G:`/`H:` como "nube FAT32 virtual" con etiqueta de cuenta. Falta parsear
    proveedor + cuenta + unidad desde la etiqueta y emitir `cloud_id`.
 8. **Overrides de Atlas** (`atlas excluir|incluir|unir|separar|estado`,
@@ -123,7 +123,7 @@ Mac, Linux). Último commit en master: `deb764d`.
 
 - Avisados de: `cloud_id`, offline opt-in, `DiskHwId`/`volume_id`.
 - Esperando respuesta: si guardan config/planes/caché **por letra** para migrar
-  a `volume_id`; dónde vive el tildado de volúmenes (recomendación: Census);
+  a `volume_id`; dónde vive el tildado de volúmenes (recomendación: CensusIndex);
   si Sort verifica el `volume_id` destino antes de mover.
 
 ## Números de referencia (para comparar)
@@ -137,8 +137,8 @@ Mac, Linux). Último commit en master: `deb764d`.
 
 ## Recordatorios operativos
 
-- `cargo test --workspace` (la raíz sola no corre `census-ipc`).
-- `taskkill //F //IM census.exe` elevado si el rebuild falla con "Acceso
+- `cargo test --workspace` (la raíz sola no corre `censusindex-ipc`).
+- `taskkill //F //IM censusindex.exe` elevado si el rebuild falla con "Acceso
   denegado (os error 5)".
 - No commitear `mac/src/types.rs` ni otros archivos en curso de otro chat.
-- Regla dura: Census lee; no borra, mueve, renombra ni cambia atributos/fechas.
+- Regla dura: CensusIndex lee; no borra, mueve, renombra ni cambia atributos/fechas.

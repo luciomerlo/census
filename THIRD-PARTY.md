@@ -1,6 +1,6 @@
 # Terceros
 
-Census no copia código de Everything. Del proyecto de voidtools sólo se usó el
+CensusIndex no copia código de Everything. Del proyecto de voidtools sólo se usó el
 **layout documentado del protocolo IPC**, que es información de interfaz.
 
 ## Bases directas
@@ -70,7 +70,7 @@ Se corrigieron al pasar a `mft` 0.10: `lru` 0.4.3 (RUSTSEC-2021-0130, *use after
 
 ## Nombres de terceros
 
-"Everything" es un producto de voidtools. Census no está afiliado, no usa su nombre como
+"Everything" es un producto de voidtools. CensusIndex no está afiliado, no usa su nombre como
 marca propia, no incluye su binario ni su formato de base de datos, y no redistribuye
 `Everything64.dll`. El modo de compatibilidad del shim es opcional, explícito y está
 documentado en el README.

@@ -6,11 +6,12 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 
-use census::ai::{AiConfig, Endpoint};
-use census::index::{Builder, Index};
-use census::query::{self, Sort, Spec};
-use census::snapshot;
-use census::volumes::Mount;
+use censusindex::ai::{AiConfig, Endpoint};
+use censusindex::index::{Builder, Index};
+use censusindex::query::{self, Sort, Spec};
+use censusindex::snapshot;
+use censusindex::volpolicy::{Decision, Known, Policy, VolPolicy};
+use censusindex::volumes::Mount;
 use serde_json::{json, Value};
 
 use crate::delta::{self, Mode, Options, Report};
@@ -36,6 +37,11 @@ pub struct Engine {
     ix: RwLock<Arc<Index>>,
     mounts: Mutex<Vec<Mount>>,
     work: Mutex<()>,
+    policy: Mutex<VolPolicy>,
+    /// Volumenes a los que el usuario dijo "si, esta vez".
+    allow_once: Mutex<std::collections::HashSet<String>>,
+    /// Extraibles reconectados: se recorren completos, sin poda por mtime.
+    reconnected: Mutex<std::collections::HashSet<String>>,
 }
 
 impl Engine {
@@ -56,12 +62,15 @@ impl Engine {
             ix: RwLock::new(Arc::new(ix)),
             mounts: Mutex::new(Vec::new()),
             work: Mutex::new(()),
+            policy: Mutex::new(VolPolicy::load(&dir.join("volumes.json"))),
+            allow_once: Mutex::default(),
+            reconnected: Mutex::default(),
         }
     }
 
     /// Nombre efectivo del dispositivo en el catalogo.
     pub fn device_name(&self) -> String {
-        census::devname::effective(&self.custom_name.read().expect("name"), &self.os_name)
+        censusindex::devname::effective(&self.custom_name.read().expect("name"), &self.os_name)
     }
 
     pub fn device_info(&self) -> Value {
@@ -75,7 +84,7 @@ impl Engine {
         let name = if raw.trim().is_empty() {
             String::new()
         } else {
-            census::devname::validate(raw)?
+            censusindex::devname::validate(raw)?
         };
         let path = self.dir.join("device_name.txt");
         if name.is_empty() {
@@ -95,7 +104,7 @@ impl Engine {
     pub fn ai_get(&self) -> Value {
         let mut v = AiConfig::load(&self.ai_path()).masked();
         v["presets"] = json!(["groq", "ollama", "lmstudio", "llamacpp", "vllm", "custom"]);
-        v["groq_url"] = json!(census::ai::GROQ_URL);
+        v["groq_url"] = json!(censusindex::ai::GROQ_URL);
         v
     }
 
@@ -123,13 +132,13 @@ impl Engine {
                 .unwrap_or_default();
         }
         ep.validate()?;
-        Ok(json!({"models": census::ai::models_of(&ep)?}))
+        Ok(json!({"models": censusindex::ai::models_of(&ep)?}))
     }
 
     /// Pregunta en lenguaje natural. Bloquea (red): llamar fuera del hilo de UI.
     pub fn ask(&self, question: &str, spanish: bool) -> Result<Value, String> {
         let cfg = AiConfig::load(&self.ai_path());
-        let a = census::ai::ask(&cfg, question, &self.current(), spanish, &|_, _| {})?;
+        let a = censusindex::ai::ask(&cfg, question, &self.current(), spanish, &|_, _| {})?;
         Ok(json!({"endpoint": a.endpoint, "model": a.model, "text": a.text}))
     }
 
@@ -155,14 +164,22 @@ impl Engine {
                 excludes.push(Path::new(&m.path).join(rel));
             }
         }
-        let host = census::index::HostInfo {
+        let host = censusindex::index::HostInfo {
             hostname: self.device_name(),
             os: "android".into(),
             arch: std::env::consts::ARCH.into(),
             version: env!("CARGO_PKG_VERSION").into(),
             ..Default::default()
         };
+        let full_volumes = self
+            .reconnected
+            .lock()
+            .expect("re")
+            .iter()
+            .cloned()
+            .collect();
         Options {
+            full_volumes,
             excludes,
             pc_id: self.pc_id.clone(),
             host,
@@ -171,9 +188,9 @@ impl Engine {
 
     fn run(&self, mode: Mode) -> Result<Value, String> {
         let _guard = self.work.lock().expect("work");
-        let mut mounts = self.mounts.lock().expect("mounts").clone();
         let old = self.current();
-        if mounts.is_empty() {
+        let mut mounts = self.eligible(&old);
+        if mounts.is_empty() && self.mounts.lock().expect("mounts").is_empty() {
             mounts = mounts_from_index(&old);
         }
         if mounts.is_empty() {
@@ -192,9 +209,129 @@ impl Engine {
         };
         let (ix, rep) = delta::rescan(prev, &mounts, &mode, &self.options(&mounts))?;
         let bytes = snapshot::save(&ix, &self.snapshot_path())?;
+        self.reconnected.lock().expect("re").clear();
         let out = report_json(label, &rep, &ix, bytes);
         *self.ix.write().expect("ix") = Arc::new(ix);
         Ok(out)
+    }
+
+    fn policy_path(&self) -> PathBuf {
+        self.dir.join("volumes.json")
+    }
+
+    fn is_indexed(ix: &Index, volume_id: &str) -> bool {
+        ix.roots.iter().any(|r| r.volume_id == volume_id)
+    }
+
+    fn decide(&self, m: &Mount, ix: &Index) -> Decision {
+        if self.allow_once.lock().expect("once").contains(&m.volume_id) {
+            return Decision::Index;
+        }
+        self.policy.lock().expect("policy").decide(
+            &m.volume_id,
+            m.removable,
+            m.is_network(),
+            Self::is_indexed(ix, &m.volume_id),
+        )
+    }
+
+    /// Volumenes montados que hay que mantener al dia segun la politica.
+    /// Los que quedan afuera conservan su ultima copia (ver `delta::rescan`).
+    fn eligible(&self, ix: &Index) -> Vec<Mount> {
+        let all = self.mounts.lock().expect("mounts").clone();
+        all.into_iter()
+            .filter(|m| self.decide(m, ix) == Decision::Index)
+            .collect()
+    }
+
+    /// Estado de todos los volumenes y que hacer con cada uno. Kotlin lo llama
+    /// cuando el sistema avisa un cambio de volumenes (pendrive conectado).
+    /// `ask`: volumenes por los que hay que preguntar **ahora**.
+    /// `to_index`: volumenes que deben indexarse y todavia no estan.
+    pub fn volumes_update(&self, volumes_json: &str) -> Result<Value, String> {
+        let mounts = volumes::from_json(&self.pc_id, volumes_json)?;
+        let ix = self.current();
+        let before: std::collections::HashSet<String> = self
+            .mounts
+            .lock()
+            .expect("mounts")
+            .iter()
+            .map(|m| m.volume_id.clone())
+            .collect();
+        *self.mounts.lock().expect("mounts") = mounts.clone();
+        for m in &mounts {
+            if m.removable && !before.contains(&m.volume_id) && Self::is_indexed(&ix, &m.volume_id)
+            {
+                self.reconnected
+                    .lock()
+                    .expect("re")
+                    .insert(m.volume_id.clone());
+            }
+        }
+        let now = censusindex::time::secs(censusindex::time::now_ns());
+        let (mut rows, mut ask, mut to_index) = (Vec::new(), Vec::new(), Vec::new());
+        {
+            let mut pol = self.policy.lock().expect("policy");
+            let present: Vec<String> = mounts.iter().map(|m| m.volume_id.clone()).collect();
+            pol.retain_connected(&present);
+            for m in &mounts {
+                let indexed = Self::is_indexed(&ix, &m.volume_id);
+                let once = self.allow_once.lock().expect("once").contains(&m.volume_id);
+                let d = if once {
+                    Decision::Index
+                } else {
+                    pol.decide(&m.volume_id, m.removable, m.is_network(), indexed)
+                };
+                let known = Known {
+                    label: m.label.clone(),
+                    path: m.path.clone(),
+                    removable: m.removable,
+                    last_seen: now,
+                };
+                if pol.note_seen(&m.volume_id, known, d) {
+                    ask.push(m.volume_id.clone());
+                }
+                if d == Decision::Index && !indexed {
+                    to_index.push(m.volume_id.clone());
+                }
+                rows.push(json!({
+                    "volume_id": m.volume_id, "label": m.label, "path": m.path, "fs": m.fs,
+                    "removable": m.removable, "total": m.total, "free": m.free,
+                    "identity": m.identity_status, "indexed": indexed,
+                    "policy": pol.effective(&m.volume_id), "decision": d,
+                }));
+            }
+            let _ = pol.save(&self.policy_path());
+        }
+        Ok(json!({"volumes": rows, "ask": ask, "to_index": to_index}))
+    }
+
+    /// `volume_id` o `"*"` (global). `policy`: ask|always|never (o siempre/nunca/preguntar).
+    pub fn set_policy(&self, volume_id: &str, policy: &str) -> Result<Value, String> {
+        let p = Policy::parse(policy).ok_or_else(|| format!("politica desconocida: {policy}"))?;
+        let mut pol = self.policy.lock().expect("policy");
+        pol.set(volume_id, p);
+        pol.save(&self.policy_path())?;
+        Ok(serde_json::to_value(&*pol).unwrap_or(Value::Null))
+    }
+
+    pub fn policy_get(&self) -> Value {
+        serde_json::to_value(&*self.policy.lock().expect("policy")).unwrap_or(Value::Null)
+    }
+
+    /// "Si, esta vez": indexa el volumen y, ya indexado, se mantiene al dia.
+    pub fn index_once(&self, volume_id: &str) -> Result<Value, String> {
+        self.allow_once
+            .lock()
+            .expect("once")
+            .insert(volume_id.to_string());
+        self.run(Mode::Dirty(Vec::new()))
+    }
+
+    /// Indexa los volumenes que la politica aprobo y todavia no estan (el resto
+    /// se copia del indice anterior sin tocar el disco).
+    pub fn index_pending(&self) -> Result<Value, String> {
+        self.run(Mode::Dirty(Vec::new()))
     }
 
     pub fn full(&self) -> Result<Value, String> {
@@ -254,9 +391,9 @@ impl Engine {
     /// Kotlin la corre en un hilo. Con `lan` exige token.
     pub fn serve(self: &Arc<Self>, port: u16, lan: bool, token: &str) -> Result<(), String> {
         let me = self.clone();
-        census::http::serve_live(
+        censusindex::http::serve_live(
             &move || me.current(),
-            &census::http::Options {
+            &censusindex::http::Options {
                 port,
                 lan,
                 token: token.to_string(),
@@ -310,7 +447,7 @@ mod tests {
     use std::fs;
 
     fn sandbox(tag: &str) -> (PathBuf, PathBuf) {
-        let base = std::env::temp_dir().join(format!("census-eng-{tag}-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("censusindex-eng-{tag}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         let data = base.join("files");
         let sd = base.join("storage");
@@ -391,7 +528,7 @@ mod name_tests {
     use super::*;
 
     fn eng(tag: &str) -> (Engine, PathBuf) {
-        let d = std::env::temp_dir().join(format!("census-name-{tag}-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("censusindex-name-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         (Engine::open(&d, "pc", "Pixel 8 de Lucio"), d)
     }
@@ -422,7 +559,7 @@ mod name_tests {
     #[test]
     fn ai_config_masks_key_and_keeps_it_on_resave() {
         let (e, d) = eng("b");
-        let cfg = json!({"endpoints":[{"name":"groq","base_url":census::ai::GROQ_URL,
+        let cfg = json!({"endpoints":[{"name":"groq","base_url":censusindex::ai::GROQ_URL,
             "api_key":"gsk_SECRET123456"}]});
         let shown = e.ai_set(&cfg.to_string()).unwrap();
         assert!(!shown.to_string().contains("SECRET"));
@@ -434,5 +571,130 @@ mod name_tests {
             .ai_set(r#"{"endpoints":[{"name":"x","base_url":"http://a/v1","api_key":"k"}]}"#)
             .is_err());
         let _ = std::fs::remove_dir_all(d);
+    }
+}
+
+#[cfg(test)]
+mod policy_tests {
+    use super::*;
+    use std::fs;
+
+    fn setup(tag: &str) -> (Engine, PathBuf, PathBuf, PathBuf) {
+        let base = std::env::temp_dir().join(format!("censusindex-pol-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let (int, usb) = (base.join("internal"), base.join("usb"));
+        fs::create_dir_all(int.join("Download")).unwrap();
+        fs::create_dir_all(usb.join("fotos")).unwrap();
+        fs::write(int.join("Download/a.pdf"), b"1").unwrap();
+        fs::write(usb.join("fotos/vacaciones.jpg"), b"1").unwrap();
+        (
+            Engine::open(&base.join("files"), "pc", "Pixel"),
+            base,
+            int,
+            usb,
+        )
+    }
+
+    fn vols(int: &Path, usb: Option<&Path>) -> String {
+        let mut v =
+            vec![json!({"path": int.to_string_lossy(), "primary": true, "total": 100, "free": 1})];
+        if let Some(u) = usb {
+            v.push(
+                json!({"path": u.to_string_lossy(), "uuid": "AAAA-1111", "removable": true,
+                          "label": "PENDRIVE", "total": 64}),
+            );
+        }
+        Value::Array(v).to_string()
+    }
+
+    #[test]
+    fn ask_policy_waits_for_the_user_then_indexes_the_whole_stick() {
+        let (e, base, int, usb) = setup("ask");
+        e.volumes_update(&vols(&int, None)).unwrap();
+        e.full().unwrap();
+        let r = e.volumes_update(&vols(&int, Some(&usb))).unwrap();
+        assert_eq!(r["ask"].as_array().unwrap().len(), 1, "{r}");
+        assert_eq!(r["volumes"][1]["decision"], "ask");
+        e.sweep().unwrap();
+        assert_eq!(
+            e.search("vacaciones", 5)["total"],
+            0,
+            "sin respuesta no se indexa"
+        );
+        // Segunda notificacion del sistema: no se vuelve a preguntar.
+        let again = e.volumes_update(&vols(&int, Some(&usb))).unwrap();
+        assert!(again["ask"].as_array().unwrap().is_empty());
+        // Se desconecta y vuelve: se pregunta de nuevo.
+        e.volumes_update(&vols(&int, None)).unwrap();
+        let back = e.volumes_update(&vols(&int, Some(&usb))).unwrap();
+        assert_eq!(back["ask"].as_array().unwrap().len(), 1);
+        let vid = r["ask"][0].as_str().unwrap().to_string();
+        let rep = e.index_once(&vid).unwrap();
+        assert_eq!(e.search("vacaciones", 5)["total"], 1);
+        assert!(
+            rep["dirs_listed"].as_u64().unwrap() <= 3,
+            "solo el pendrive se recorre: {rep}"
+        );
+        let _ = fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn always_indexes_on_connect_and_never_skips_but_keeps_the_old_copy() {
+        let (e, base, int, usb) = setup("always");
+        e.volumes_update(&vols(&int, None)).unwrap();
+        e.full().unwrap();
+        e.set_policy("*", "siempre").unwrap();
+        let r = e.volumes_update(&vols(&int, Some(&usb))).unwrap();
+        assert_eq!(r["to_index"].as_array().unwrap().len(), 1);
+        e.index_pending().unwrap();
+        assert_eq!(e.search("vacaciones", 5)["total"], 1);
+        // Pasa a "nunca": no se actualiza mas, pero lo ya indexado no se pierde.
+        let vid = r["to_index"][0].as_str().unwrap();
+        e.set_policy(vid, "never").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        fs::write(usb.join("fotos/nueva.jpg"), b"1").unwrap();
+        e.volumes_update(&vols(&int, Some(&usb))).unwrap();
+        e.sweep().unwrap();
+        assert_eq!(e.search("vacaciones", 5)["total"], 1, "copia conservada");
+        assert_eq!(e.search("nueva.jpg", 5)["total"], 0, "congelado");
+        let _ = fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn reconnected_stick_is_walked_in_full_not_pruned_by_mtime() {
+        let (e, base, int, usb) = setup("recon");
+        e.set_policy("*", "always").unwrap();
+        e.volumes_update(&vols(&int, Some(&usb))).unwrap();
+        e.full().unwrap();
+        let quiet = e.sweep().unwrap();
+        assert_eq!(quiet["dirs_listed"], 0, "sin reconexion se poda: {quiet}");
+        e.volumes_update(&vols(&int, None)).unwrap(); // se desconecta
+        e.volumes_update(&vols(&int, Some(&usb))).unwrap(); // vuelve
+        let rep = e.sweep().unwrap();
+        assert!(
+            rep["dirs_listed"].as_u64().unwrap() >= 2,
+            "recorrido completo del pendrive: {rep}"
+        );
+        assert_eq!(e.sweep().unwrap()["dirs_listed"], 0, "la marca se consume");
+        let _ = fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn never_from_the_start_never_touches_the_stick() {
+        let (e, base, int, usb) = setup("never");
+        e.volumes_update(&vols(&int, None)).unwrap();
+        e.full().unwrap();
+        e.set_policy("*", "never").unwrap();
+        let r = e.volumes_update(&vols(&int, Some(&usb))).unwrap();
+        assert!(
+            r["ask"].as_array().unwrap().is_empty() && r["to_index"].as_array().unwrap().is_empty()
+        );
+        e.sweep().unwrap();
+        assert_eq!(e.search("vacaciones", 5)["total"], 0);
+        // La politica sobrevive a un reinicio.
+        let again = Engine::open(&base.join("files"), "pc", "Pixel");
+        assert_eq!(again.policy_get()["default"], "never");
+        assert!(e.set_policy("*", "quizas").is_err());
+        let _ = fs::remove_dir_all(base);
     }
 }

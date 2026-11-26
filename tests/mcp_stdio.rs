@@ -1,14 +1,14 @@
-//! Prueba de punta a punta del servidor MCP de Census sobre stdio.
+//! Prueba de punta a punta del servidor MCP de CensusIndex sobre stdio.
 //!
-//! Lanza el binario `census mcp --root <dir>` como proceso hijo, le habla en
+//! Lanza el binario `censusindex mcp --root <dir>` como proceso hijo, le habla en
 //! JSON-RPC 2.0 (una línea por mensaje, respuestas por stdout) y verifica el
 //! protocolo completo: initialize, notifications/initialized (sin respuesta),
 //! tools/list, las herramientas search/count/largest/stats, método
 //! desconocido (-32601) y JSON inválido (-32700).
 //!
-//! Nota: `Backend::open` prefiere un demonio Census por IPC si hay uno
+//! Nota: `Backend::open` prefiere un demonio CensusIndex por IPC si hay uno
 //! corriendo en la máquina. Esta prueba asume el backend local (backend ==
-//! "local"); si `census serve` está activo, el arranque irá por IPC y el
+//! "local"); si `censusindex serve` está activo, el arranque irá por IPC y el
 //! chequeo de `stats` no se cumplirá (se ve por stderr: "backend: demonio").
 
 use std::io::{BufRead, BufReader, Write};
@@ -41,7 +41,7 @@ impl Drop for Fixture {
 }
 
 fn build_fixture() -> (Fixture, Vec<FileSpec>) {
-    let root = std::env::temp_dir().join(format!("census-mcp-test-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("censusindex-mcp-test-{}", std::process::id()));
     // Restos de una corrida previa abortada: empezar limpio.
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(root.join("sub1")).expect("crear sub1");
@@ -99,10 +99,10 @@ struct Server {
 
 impl Server {
     fn spawn(root: &Path) -> Server {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_census"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_censusindex"))
             .args(["mcp", "--root", &root.to_string_lossy()])
             // Fuerza el indice propio: el test no depende de que haya un
-            // demonio Census escuchando en la maquina.
+            // demonio CensusIndex escuchando en la maquina.
             .env("CENSUS_MCP_LOCAL", "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -110,7 +110,7 @@ impl Server {
             // en la salida del test si algo falla.
             .stderr(Stdio::inherit())
             .spawn()
-            .expect("no se pudo lanzar `census mcp`");
+            .expect("no se pudo lanzar `censusindex mcp`");
         let stdout = child.stdout.take().expect("stdout piped");
         let stdin = child.stdin.take().expect("stdin piped");
 
@@ -206,7 +206,7 @@ impl Server {
 fn mcp_stdio_end_to_end() {
     let (_fx, files) = build_fixture();
     // _fx limpia el directorio temporal al salir (Drop), incluso en panic.
-    let root = std::env::temp_dir().join(format!("census-mcp-test-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("censusindex-mcp-test-{}", std::process::id()));
     let mut srv = Server::spawn(&root);
 
     // ---- initialize ------------------------------------------------------
@@ -224,7 +224,7 @@ fn mcp_stdio_end_to_end() {
         "protocolVersion no ecoado: {r}"
     );
     assert_eq!(
-        r["result"]["serverInfo"]["name"], "census",
+        r["result"]["serverInfo"]["name"], "censusindex",
         "serverInfo.name: {r}"
     );
     assert!(

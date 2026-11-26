@@ -2,7 +2,7 @@
 //!
 //! WizEverything guarda en `%APPDATA%\WizEverything\settings.ini` una línea
 //! `excluded_drives=C:,H:` (separada por comas, por nombre de unidad y sin
-//! distinguir mayúsculas). Census lee esa misma lista, así que por defecto
+//! distinguir mayúsculas). CensusIndex lee esa misma lista, así que por defecto
 //! indexa exactamente las unidades que el usuario ya eligió allá; su propia
 //! configuración (`%APPDATA%\Census\settings.ini`, misma clave y formato) tiene
 //! la última palabra.
@@ -440,7 +440,7 @@ pub fn wiz_settings_path() -> Option<PathBuf> {
     settings_path_for("WizEverything")
 }
 
-pub fn census_settings_path() -> Option<PathBuf> {
+pub fn censusindex_settings_path() -> Option<PathBuf> {
     settings_path_for("Census")
 }
 
@@ -468,9 +468,9 @@ fn read_excluded(path: Option<PathBuf>) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Unidades excluidas: las de Census mandan; si no hay, las de WizEverything.
+/// Unidades excluidas: las de CensusIndex mandan; si no hay, las de WizEverything.
 pub fn excluded_drives() -> Vec<String> {
-    let own = read_excluded(census_settings_path());
+    let own = read_excluded(censusindex_settings_path());
     if !own.is_empty() {
         return own;
     }
@@ -608,10 +608,10 @@ mod imp {
 pub use imp::enumerate;
 pub use imp::volume_serial;
 
-/// Unidades que Census indexa: **todas las disponibles** (locales, de red y de
-/// nube), salvo las que el usuario haya excluido en la configuración de Census.
+/// Unidades que CensusIndex indexa: **todas las disponibles** (locales, de red y de
+/// nube), salvo las que el usuario haya excluido en la configuración de CensusIndex.
 pub fn selected() -> Vec<Drive> {
-    let excluded = read_excluded(census_settings_path());
+    let excluded = read_excluded(censusindex_settings_path());
     enumerate()
         .into_iter()
         .filter(|d| d.is_indexable())
@@ -621,7 +621,7 @@ pub fn selected() -> Vec<Drive> {
 
 /// Roster completo con el estado de selección, para mostrarlo en la ventana.
 pub fn roster() -> Vec<(Drive, bool)> {
-    let excluded = read_excluded(census_settings_path());
+    let excluded = read_excluded(censusindex_settings_path());
     enumerate()
         .into_iter()
         .filter(|d| !d.fs.is_empty())
@@ -632,9 +632,9 @@ pub fn roster() -> Vec<(Drive, bool)> {
         .collect()
 }
 
-/// Guarda la selección de unidades en la configuración de Census.
+/// Guarda la selección de unidades en la configuración de CensusIndex.
 pub fn save_excluded(names: &[String]) -> Result<(), String> {
-    let Some(path) = census_settings_path() else {
+    let Some(path) = censusindex_settings_path() else {
         return Err("no hay APPDATA".into());
     };
     if let Some(dir) = path.parent() {
@@ -665,7 +665,7 @@ pub fn exists(path: &Path) -> bool {
 
 /// Lee una clave de `%APPDATA%\Census\settings.ini`.
 pub fn get_setting(key: &str) -> Option<String> {
-    let texto = std::fs::read_to_string(census_settings_path()?).ok()?;
+    let texto = std::fs::read_to_string(censusindex_settings_path()?).ok()?;
     for line in texto.lines() {
         let (k, v) = line.split_once('=')?;
         if k.trim() == key {
@@ -677,7 +677,7 @@ pub fn get_setting(key: &str) -> Option<String> {
 
 /// Escribe (o reemplaza) una clave, conservando el resto del archivo.
 pub fn set_setting(key: &str, value: &str) -> std::io::Result<()> {
-    let path = census_settings_path()
+    let path = censusindex_settings_path()
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no hay APPDATA"))?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
@@ -787,7 +787,7 @@ mod tests {
         assert_eq!(account, "luciomerlo@gmail.com");
         assert_eq!(unit, UNIDAD_MI_DRIVE);
 
-        // La etiqueta de `G:` tal como la ve Census hoy (`- G...`).
+        // La etiqueta de `G:` tal como la ve CensusIndex hoy (`- G...`).
         let (_, account, unit) =
             parse_cloud_label("lucio@gruporiccitelli.com - G...").expect("debe parsear");
         assert_eq!(account, "lucio@gruporiccitelli.com");

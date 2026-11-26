@@ -32,7 +32,7 @@ Actualizado: 2026-11-22. Crate: `mac/`. Contrato: `docs/PLATAFORMAS.md`,
   `CloudStorage/GoogleDrive-<cuenta>/Shared drives/<drive>`; alias manual para
   rclone/FUSE; duplicados avisados, nunca fusionados en silencio.
 - **Snapshot `.cnx` v1 por volumen** (`src/snapshot.rs`): un archivo por
-  `volume_id` en `~ …/Census/snapshots` (`config::snapshots_dir()`), no uno
+  `volume_id` en `~ …/CensusIndex/snapshots` (`config::snapshots_dir()`), no uno
   global. Cabecera de 96 B con versión, flags, cantidades, `total_len`,
   `content_hash`, `body_checksum`, `header_block_checksum`, `built_at` y
   `generation`; bloque variable con provenance (`pc_id`, host, platform, arch,
@@ -108,18 +108,18 @@ Actualizado: 2026-11-22. Crate: `mac/`. Contrato: `docs/PLATAFORMAS.md`,
    - `Marca` se actualiza con el `eventId` real, no con el reloj.
 5. **HTTP + MCP**
    - `/health`, `/api/v1/search|count|top|volumes|stats|manifest|snapshot`,
-     `/mcp` JSON-RPC; `census mcp` stdio.
+     `/mcp` JSON-RPC; `censusindex mcp` stdio.
    - Herramientas: `search`, `count`, `largest`, `recent`, `volumes`, `stats`,
      `peers`, `remote_search`. Todo lectura.
 6. **Tailscale / Atlas**
-   - `tailscale status --json`, peers con `has_census`, `pull` de snapshots
+   - `tailscale status --json`, peers con `has_censusindex`, `pull` de snapshots
      opacos, selección explícita de offline, `latest-wins` por `Marca`,
      procedencia y frescura en cada fila.
    - Nunca leer offline por defecto; `--todas` sólo si el usuario lo pide.
 7. **Empaquetado**
    - `.app` con `Info.plist`, firma Developer ID, notarización, universal2.
-   - LaunchAgent opcional para `census serve`; no arrancar tareas pesadas solas.
-   - Full Disk Access: `census access` explica qué falta, sin pedir sudo.
+   - LaunchAgent opcional para `censusindex serve`; no arrancar tareas pesadas solas.
+   - Full Disk Access: `censusindex access` explica qué falta, sin pedir sudo.
 8. **Pruebas en VM reales**
    - macOS Intel (12/13) y Apple silicon (13/14/15).
    - Árbol sintético de 1 M de archivos; medir nodos/s y RAM.

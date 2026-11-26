@@ -1,4 +1,4 @@
-# Census Android
+# CensusIndex Android
 
 Núcleo Rust (`src/`, reutiliza `../linux`) + app Kotlin (`app/`). Diseño, comparación con productos existentes y medidas: [`docs/ANDROID.md`](../docs/ANDROID.md).
 

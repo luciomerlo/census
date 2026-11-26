@@ -195,7 +195,7 @@ fn entrada(path: &Path, meta: &fs::Metadata, id: FileId, parent: FileId, name: V
     }
 }
 
-/// Volumen sintético para una raíz suelta (`census index --root`).
+/// Volumen sintético para una raíz suelta (`censusindex index --root`).
 pub fn synthetic_volume(path: &Path, host: &str) -> crate::types::Volume {
     let abs = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     let mount = abs.to_string_lossy().into_owned();

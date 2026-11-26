@@ -34,7 +34,7 @@ pub enum Latido {
     Reindexar,
     /// El overlay creció demasiado (`n` cambios): conviene reindexar y vaciarlo.
     Compactar(u64),
-    /// No hay permisos para abrir la unidad (Census no está elevado).
+    /// No hay permisos para abrir la unidad (CensusIndex no está elevado).
     SinPermisos,
 }
 

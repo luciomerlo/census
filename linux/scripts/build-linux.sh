@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Construye Census para Intel/AMD y ARM64 en Linux (binarios estaticos musl).
+# Construye CensusIndex para Intel/AMD y ARM64 en Linux (binarios estaticos musl).
 # En Windows/macOS usa rust-lld; en Linux usa el linker nativo.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -29,15 +29,15 @@ for target in "${TARGETS[@]}"; do
     *) arch="${target%%-*}" ;;
   esac
   stage="$(mktemp -d)"
-  cp "target/$target/release/census" "$stage/census"
+  cp "target/$target/release/censusindex" "$stage/censusindex"
   cp README.md "$stage/README.md"
   cp PENDIENTE.md "$stage/PENDIENTE.md"
   cp ../docs/MINIMO.md "$stage/MINIMO.md"
-  cp packaging/census.service "$stage/census.service"
+  cp packaging/censusindex.service "$stage/censusindex.service"
   cp packaging/install.sh "$stage/install.sh"
-  tar -C "$stage" -czf "dist/census-${VERSION}-linux-${arch}.tar.gz" .
+  tar -C "$stage" -czf "dist/censusindex-${VERSION}-linux-${arch}.tar.gz" .
   rm -rf "$stage"
-  echo "    dist/census-${VERSION}-linux-${arch}.tar.gz"
+  echo "    dist/censusindex-${VERSION}-linux-${arch}.tar.gz"
 done
 ( cd dist && sha256sum ./*.tar.gz > SHA256SUMS.txt )
 cat dist/SHA256SUMS.txt

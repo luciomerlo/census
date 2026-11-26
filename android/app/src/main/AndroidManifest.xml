@@ -3,7 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Leer TODOS los archivos (Descargas, documentos, SD). Sin esto Android 11+
-         solo deja ver multimedia. Google Play restringe este permiso: Census se
+         solo deja ver multimedia. Google Play restringe este permiso: CensusIndex se
          distribuye por APK directo. Es solo lectura: la app nunca escribe ni borra. -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
         tools:ignore="ScopedStorage" />
@@ -14,7 +14,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
-        android:label="Census"
+        android:label="CensusIndex"
         android:allowBackup="false"
         android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
@@ -42,6 +42,8 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Servidor HTTP local de solo lectura del indice de archivos" />
         </service>
+
+        <receiver android:name=".VolumeAnswerReceiver" android:exported="false" />
 
         <receiver android:name=".BootReceiver" android:exported="true">
             <intent-filter>

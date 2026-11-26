@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use census::{query, snapshot, Index};
+use censusindex::{query, snapshot, Index};
 
 struct Rng(u64);
 
@@ -26,7 +26,7 @@ impl Rng {
 
 fn temp(name: &str) -> PathBuf {
     let mut p = std::env::temp_dir();
-    p.push(format!("census-fuzz-{}-{name}", std::process::id()));
+    p.push(format!("censusindex-fuzz-{}-{name}", std::process::id()));
     p
 }
 

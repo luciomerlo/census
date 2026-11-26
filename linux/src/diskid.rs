@@ -2,7 +2,7 @@
 //!
 //! La letra o el punto de montaje NO identifican un disco: dos discos externos
 //! pueden caer en `/media/lucio/BACKUP` en momentos distintos, y `sdb1`/`sdc1`
-//! cambia con el orden de enumeracion. Census usa:
+//! cambia con el orden de enumeracion. CensusIndex usa:
 //!
 //! ```text
 //! DiskHwId  = hash(WWN o serial || vendor || model || capacidad)

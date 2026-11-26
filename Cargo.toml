@@ -1,20 +1,20 @@
 [package]
-name = "census-core"
+name = "censusindex-core"
 version = "0.2.0"
 edition = "2021"
 license = "MIT"
 description = "Indice instantaneo de archivos para Windows (NTFS): lee la MFT y sigue el USN Journal"
 
 [workspace]
-members = ["crates/census-ipc", "crates/census-shim"]
+members = ["crates/censusindex-ipc", "crates/censusindex-shim"]
 resolver = "2"
 
 [[bin]]
-name = "census"
+name = "censusindex"
 path = "src/main.rs"
 
 [lib]
-name = "census"
+name = "censusindex"
 path = "src/lib.rs"
 
 [features]
@@ -22,7 +22,7 @@ default = ["gui"]
 gui = ["dep:eframe"]
 
 [dependencies]
-census-ipc = { path = "crates/census-ipc" }
+censusindex-ipc = { path = "crates/censusindex-ipc" }
 mft = "0.10"
 jiff = "0.2"
 # Mapea `C.wcat` en sólo lectura: las arenas de nombres no se copian.

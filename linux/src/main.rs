@@ -1,4 +1,4 @@
-//! CLI v1 de Census/Linux: index, query, top, stats, volumes y scan.
+//! CLI v1 de CensusIndex/Linux: index, query, top, stats, volumes y scan.
 //!
 //! Snapshot global en `CENSUS_DATA_DIR/index.cns`; `serve` (HTTP 8787) usa el
 //! mismo `Index`. Ver `docs/MINIMO.md`.
@@ -6,23 +6,23 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use census::cloud;
-use census::index::{Index, F_DIR, F_SYMLINK};
-use census::query::{self, Sort, Spec};
-use census::volumes;
-use census::{config, scan, snapshot};
+use censusindex::cloud;
+use censusindex::index::{Index, F_DIR, F_SYMLINK};
+use censusindex::query::{self, Sort, Spec};
+use censusindex::volumes;
+use censusindex::{config, scan, snapshot};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let cmd = args.first().map(String::as_str).unwrap_or("help");
     match cmd {
         "version" | "--version" | "-V" => {
-            println!("census-linux {}", env!("CARGO_PKG_VERSION"));
+            println!("censusindex-linux {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
         "cloud-id" => {
             if args.len() < 4 {
-                eprintln!("uso: census cloud-id <provider> <account> <unidad>");
+                eprintln!("uso: censusindex cloud-id <provider> <account> <unidad>");
                 return ExitCode::FAILURE;
             }
             println!("{}", cloud::hash(&args[1], &args[2], &args[3]));
@@ -36,13 +36,13 @@ fn main() -> ExitCode {
         "serve" => serve_cmd(&args),
         "help" | "--help" | "-h" => {
             println!(
-                "census-linux {} (v1)\n\n\
-                 census index [--json] [--full] [--cross-fs] [ruta...]\n\
-                 census query <texto> [--path P] [--ext E] [--min-size N] [--sort S] [--limit N] [--json]\n\
-                 census top [N] [--limit N] [--json]\n\
-                 census stats [--json]\n\
-                 census volumes [--json]\n\
-                 census serve [--port 8787] [--lan]\n\n\
+                "censusindex-linux {} (v1)\n\n\
+                 censusindex index [--json] [--full] [--cross-fs] [ruta...]\n\
+                 censusindex query <texto> [--path P] [--ext E] [--min-size N] [--sort S] [--limit N] [--json]\n\
+                 censusindex top [N] [--limit N] [--json]\n\
+                 censusindex stats [--json]\n\
+                 censusindex volumes [--json]\n\
+                 censusindex serve [--port 8787] [--lan]\n\n\
                  Snapshot: {}\n\
                  Sin args, index usa los montajes locales (sin red/nube).\n\
                  --lan exige token en config; API sólo lectura en /v1/.",
@@ -52,7 +52,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         other => {
-            eprintln!("'{other}' no existe; probá `census help`");
+            eprintln!("'{other}' no existe; probá `censusindex help`");
             ExitCode::FAILURE
         }
     }
@@ -68,7 +68,7 @@ fn load_index() -> Result<Index, ExitCode> {
         Ok(ix) => Ok(ix),
         Err(e) => {
             eprintln!(
-                "no hay índice en {} ({e}); corré `census index`",
+                "no hay índice en {} ({e}); corré `censusindex index`",
                 p.display()
             );
             Err(ExitCode::from(2))
@@ -167,7 +167,7 @@ fn volumes_cmd(args: &[String]) -> ExitCode {
             m.path,
             m.kind,
             m.fs,
-            census::fmt::human(m.total),
+            censusindex::fmt::human(m.total),
             m.volume_id,
             if m.cloud_id.is_empty() {
                 String::new()
@@ -288,7 +288,7 @@ fn query_cmd(args: &[String]) -> ExitCode {
     };
     let mut spec = Spec::new(&positional(args).join(" "));
     if let Some(v) = flag(args, "--path") {
-        spec.path = Some(census::index::normalize_path(v));
+        spec.path = Some(censusindex::index::normalize_path(v));
     }
     if let Some(v) = flag(args, "--ext") {
         spec.ext = Some(v.trim_start_matches('.').to_ascii_lowercase());
@@ -391,7 +391,7 @@ fn print_hits(
                 r["size_bytes"].as_u64().unwrap_or(0),
                 r["mtime_ns"]
                     .as_i64()
-                    .map(census::time::stamp_local)
+                    .map(censusindex::time::stamp_local)
                     .unwrap_or_default(),
                 r["path"].as_str().unwrap_or("")
             );
@@ -414,16 +414,16 @@ fn serve_cmd(args: &[String]) -> ExitCode {
         .unwrap_or(cfg.port);
     let lan = args.iter().any(|a| a == "--lan");
     if lan && cfg.token.trim().is_empty() {
-        eprintln!("--lan requiere token en la config (census config token <secreto>)");
+        eprintln!("--lan requiere token en la config (censusindex config token <secreto>)");
         return ExitCode::FAILURE;
     }
-    let opts = census::http::Options {
+    let opts = censusindex::http::Options {
         port,
         lan,
         token: cfg.token,
         name: config::Config::load().device_name(),
     };
-    match census::http::serve(&ix, &opts) {
+    match censusindex::http::serve(&ix, &opts) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("serve: {e}");
@@ -438,7 +438,7 @@ fn stats_cmd(args: &[String]) -> ExitCode {
         Err(c) => return c,
     };
     let bytes: u64 = ix.roots.iter().map(|r| ix.node_size(r.id)).sum();
-    let age = census::time::now_ns().saturating_sub(ix.built_at) / 1_000_000_000;
+    let age = censusindex::time::now_ns().saturating_sub(ix.built_at) / 1_000_000_000;
     if args.iter().any(|a| a == "--json") {
         println!(
             "{}",
@@ -459,7 +459,7 @@ fn stats_cmd(args: &[String]) -> ExitCode {
         println!(
             "generación: {} · snapshot: {}",
             ix.generation,
-            census::time::stamp_local(ix.built_at)
+            censusindex::time::stamp_local(ix.built_at)
         );
         println!(
             "{} volúmenes · {} nodos · {} archivos · {} carpetas · {}",
@@ -467,7 +467,7 @@ fn stats_cmd(args: &[String]) -> ExitCode {
             ix.stats.nodes,
             ix.stats.files,
             ix.stats.dirs,
-            census::fmt::human(bytes)
+            censusindex::fmt::human(bytes)
         );
         for r in &ix.roots {
             println!(

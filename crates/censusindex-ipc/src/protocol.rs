@@ -40,7 +40,7 @@ pub mod req {
 /// Lo que este motor **sabe** completar, y cómo preguntárselo.
 ///
 /// El pedido puede incluir campos que el motor no tiene (Everything lleva
-/// historial de ejecución; Census no), así que el `flags` de la respuesta dice
+/// historial de ejecución; CensusIndex no), así que el `flags` de la respuesta dice
 /// qué campos vinieron de verdad. `caps::PARTIAL_METADATA` avisa que falta
 /// alguno de los metadatos opcionales, para que el cliente no lea un cero como
 /// dato ("run_count = 0" no significa "nunca se ejecutó").
@@ -50,7 +50,7 @@ pub mod caps {
     /// El motor no completa todos los metadatos opcionales.
     pub const PARTIAL_METADATA: u32 = 0x0000_8000;
 
-    /// Campos que Census completa hoy: nombres, rutas, tamaño, fechas y
+    /// Campos que CensusIndex completa hoy: nombres, rutas, tamaño, fechas y
     /// atributos. `RUN_COUNT` queda afuera a propósito (siempre 0/desconocido).
     pub const DEFAULT: u32 = req::NAME
         | req::PATH

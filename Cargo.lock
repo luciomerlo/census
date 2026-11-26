@@ -272,10 +272,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "census-core"
+name = "censusindex-core"
 version = "0.2.0"
 dependencies = [
- "census-ipc",
+ "censusindex-ipc",
  "eframe",
  "jiff",
  "memmap2",
@@ -287,17 +287,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "census-ipc"
+name = "censusindex-ipc"
 version = "0.1.0"
 dependencies = [
  "windows-sys 0.59.0",
 ]
 
 [[package]]
-name = "census-shim"
+name = "censusindex-shim"
 version = "0.1.0"
 dependencies = [
- "census-ipc",
+ "censusindex-ipc",
  "windows-sys 0.59.0",
 ]
 

@@ -328,7 +328,7 @@ mod tests {
             ..Default::default()
         });
         let ix = b.finish();
-        let path = std::env::temp_dir().join(format!("census-snap-{}.cns", std::process::id()));
+        let path = std::env::temp_dir().join(format!("censusindex-snap-{}.cns", std::process::id()));
         save(&ix, &path).unwrap();
         let back = load(&path).unwrap();
         assert_eq!(back.len(), 2);
@@ -345,7 +345,7 @@ mod tests {
         let root = b.push(b"/", F_DIR | F_ROOT, 0, 0, 0, 0, 0, 0, 1, 1, 0o755);
         b.nodes[root as usize].parent = root;
         let ix = b.finish();
-        let path = std::env::temp_dir().join(format!("census-snap-bad-{}.cns", std::process::id()));
+        let path = std::env::temp_dir().join(format!("censusindex-snap-bad-{}.cns", std::process::id()));
         save(&ix, &path).unwrap();
         let mut bytes = fs::read(&path).unwrap();
         let last = bytes.len() - 1;

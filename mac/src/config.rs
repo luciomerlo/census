@@ -284,7 +284,7 @@ fn home() -> PathBuf {
     std::env::temp_dir()
 }
 
-/// En macOS, `~/Library/Application Support/Census`. En otros sistemas,
+/// En macOS, `~/Library/Application Support/CensusIndex`. En otros sistemas,
 /// equivalente XDG para poder correr los tests en Windows.
 #[allow(unreachable_code)]
 pub fn data_dir() -> PathBuf {
@@ -293,7 +293,7 @@ pub fn data_dir() -> PathBuf {
     }
     #[cfg(target_os = "macos")]
     {
-        return home().join("Library/Application Support/Census");
+        return home().join("Library/Application Support/CensusIndex");
     }
     #[cfg(windows)]
     {
@@ -303,10 +303,10 @@ pub fn data_dir() -> PathBuf {
     }
     if let Ok(d) = std::env::var("XDG_DATA_HOME") {
         if !d.trim().is_empty() {
-            return PathBuf::from(d).join("census");
+            return PathBuf::from(d).join("censusindex");
         }
     }
-    home().join(".local/share/census")
+    home().join(".local/share/censusindex")
 }
 
 #[allow(unreachable_code)]
@@ -316,7 +316,7 @@ pub fn config_dir() -> PathBuf {
     }
     #[cfg(target_os = "macos")]
     {
-        return home().join("Library/Application Support/Census");
+        return home().join("Library/Application Support/CensusIndex");
     }
     #[cfg(windows)]
     {
@@ -326,10 +326,10 @@ pub fn config_dir() -> PathBuf {
     }
     if let Ok(d) = std::env::var("XDG_CONFIG_HOME") {
         if !d.trim().is_empty() {
-            return PathBuf::from(d).join("census");
+            return PathBuf::from(d).join("censusindex");
         }
     }
-    home().join(".config/census")
+    home().join(".config/censusindex")
 }
 
 pub fn config_path() -> PathBuf {
@@ -457,7 +457,7 @@ pub fn pc_id() -> String {
         }
     }
     let h1 = crate::types::fnv1a64(&[seed.as_bytes()]);
-    let h2 = crate::types::fnv1a64(&[seed.as_bytes(), b":census-mac"]);
+    let h2 = crate::types::fnv1a64(&[seed.as_bytes(), b":censusindex-mac"]);
     let id = format!("{h1:016x}{h2:016x}");
     let _ = fs::create_dir_all(data_dir());
     let _ = fs::write(&path, format!("{id}\n"));

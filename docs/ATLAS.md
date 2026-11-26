@@ -1,4 +1,4 @@
-# Census Atlas — leer índices de otras PCs por Tailscale
+# CensusIndex Atlas — leer índices de otras PCs por Tailscale
 
 Estado: diseño. Base de código: `Arena<T>` (commit `d5f9c9a`) ya permite que las
 arenas del snapshot se lean sin copiarlas, que es lo que necesita el hub para
@@ -21,7 +21,7 @@ Cada PC indexa sus discos y produce un `.wcat`. Queremos:
 | Nivel | Identificador | De dónde sale |
 |---|---|---|
 | Red | `machine_id` (estable) + `dns_name` | `tailscale status --json` |
-| PC | `pc_id` = hash de la clave pública de la PC | la genera Census la primera vez |
+| PC | `pc_id` = hash de la clave pública de la PC | la genera CensusIndex la primera vez |
 | Disco | `volume_id` = `vol_serial` + tamaño | `GetVolumeInformationW`, ya lo tenemos |
 
 Una entrada de índice se identifica por la terna **`pc_id` / `volume_id` /
@@ -52,7 +52,7 @@ hibernación). El USN no.
 
 ```
    PC-A (Windows)            PC-B (Linux)             Notebook (macOS)
-   census agent ──┐         census agent ──┐         census agent ──┐
+   censusindex agent ──┐         censusindex agent ──┐         censusindex agent ──┐
                   │                        │                        │
              Tailscale (WireGuard, IP 100.x.y.z, MagicDNS)
                   │                        │                        │
@@ -126,14 +126,14 @@ Una consulta federada con 5 peers:
 ## Comandos
 
 ```
-census atlas init                 # crea pc_id (clave Ed25519) y une la tailnet
-census atlas peers                # lista PCs, estado y última versión de cada disco
-census atlas push                 # sube el snapshot propio al hub
-census atlas pull                 # baja los snapshots que falten
-census atlas query "mp3"          # busca en todas las PCs
-census atlas query "mp3" --as-of 2026-03-03
-census atlas where "informe.docx" # dónde está, en qué PC, qué tan fresco
-census atlas list                 # discos conocidos por PC, con versión y estado
+censusindex atlas init                 # crea pc_id (clave Ed25519) y une la tailnet
+censusindex atlas peers                # lista PCs, estado y última versión de cada disco
+censusindex atlas push                 # sube el snapshot propio al hub
+censusindex atlas pull                 # baja los snapshots que falten
+censusindex atlas query "mp3"          # busca en todas las PCs
+censusindex atlas query "mp3" --as-of 2026-03-03
+censusindex atlas where "informe.docx" # dónde está, en qué PC, qué tan fresco
+censusindex atlas list                 # discos conocidos por PC, con versión y estado
 ```
 
 ## Seguridad
@@ -151,7 +151,7 @@ census atlas list                 # discos conocidos por PC, con versión y esta
 
 1. **Manifest + versiones** (hoy): `atlas::Manifest`, `atlas::Version`, selección
    de la versión vigente por disco con la regla de arriba, y tests puros.
-2. **`census atlas peers`**: parsear `tailscale status --json`, sin red propia.
+2. **`censusindex atlas peers`**: parsear `tailscale status --json`, sin red propia.
 3. **Hub mínimo**: `GET /manifest`, `PUT /snapshot`, `GET /snapshot/:id`.
 4. **Consulta federada** con deadline y marcado de frescura.
 5. **`--as-of`** sobre el anillo de versiones.
@@ -189,15 +189,15 @@ disco no usa la letra. La letra es de la sesión, el `cloud_id` es del contenido
    **`posible_duplicado`** y se muestra la advertencia; **nunca** se fusiona en
    silencio.
 3. El usuario puede resolverlo a mano:
-   `census atlas unir <volumen-a> <volumen-b>` (los trata como el mismo) y
-   `census atlas separar <volumen>` (deshace).
+   `censusindex atlas unir <volumen-a> <volumen-b>` (los trata como el mismo) y
+   `censusindex atlas separar <volumen>` (deshace).
 
 Lo mismo aplica entre PCs: el hub compara `cloud_id` de los snapshots de todas
 las máquinas. Un drive compartido indexado en tres PCs es **un** volumen.
 
 ### 9.3 Activar o desactivar unidades, por app
 
-- Cada app tiene su propia lista, como hoy: `settings.ini` de Census,
+- Cada app tiene su propia lista, como hoy: `settings.ini` de CensusIndex,
   la de Wiz y la de Sort. Ninguna escribe la de otra.
 - La clave es **`volume_id`** (local) o **`cloud_id`** (nube), nunca la letra.
 - Una app puede indexar un drive que otra ignora; no se sincronizan listas.
@@ -210,7 +210,7 @@ volúmenes remotos** `(pc_id, volume_id)`:
 
 - por defecto: **todo lo online**;
 - los **offline** se incluyen sólo si el usuario los marcó
-  (`census atlas incluir <pc> <volumen>`) o si usa `--todas`;
+  (`censusindex atlas incluir <pc> <volumen>`) o si usa `--todas`;
 - cada resultado dice de dónde salió y si es online/offline/stale.
 
 La selección se guarda en `%LOCALAPPDATA%\Census\atlas\seleccion.json` y viaja
@@ -221,11 +221,11 @@ en la consulta federada, así el peer no tiene que adivinar.
 El usuario puede desactivar a mano, y eso **manda sobre la detección**:
 
 ```
-census atlas excluir <pc> <volumen>     # no lo leo más de esa PC
-census atlas incluir <pc> <volumen>
-census atlas unir <volumen-a> <volumen-b>
-census atlas separar <volumen>
-census atlas estado                    # qué está excluido y por qué
+censusindex atlas excluir <pc> <volumen>     # no lo leo más de esa PC
+censusindex atlas incluir <pc> <volumen>
+censusindex atlas unir <volumen-a> <volumen-b>
+censusindex atlas separar <volumen>
+censusindex atlas estado                    # qué está excluido y por qué
 ```
 
 Archivo: `%LOCALAPPDATA%\Census\atlas\overrides.json`, con `motivo` y fecha para

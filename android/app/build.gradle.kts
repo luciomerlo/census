@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.census.android"
+    namespace = "com.censusindex.android"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.census.android"
+        applicationId = "com.censusindex.android"
         // 30: StorageVolume.directory, MediaStore.getGeneration y GENERATION_MODIFIED.
         minSdk = 30
         targetSdk = 35

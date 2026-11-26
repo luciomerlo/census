@@ -238,7 +238,7 @@ pub fn parse_simple(raw: &str) -> Query {
     q
 }
 
-/// Consulta completa con la sintaxis de Census.
+/// Consulta completa con la sintaxis de CensusIndex.
 pub fn parse(raw: &str, ix: &Index) -> Query {
     let mut q = Query {
         raw: raw.to_string(),

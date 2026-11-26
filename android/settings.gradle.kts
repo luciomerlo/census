@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "census-android"
+rootProject.name = "censusindex-android"
 include(":app")

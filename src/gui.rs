@@ -1,4 +1,4 @@
-//! Ventana de Census: barra de búsqueda arriba, tabla virtualizada, barra de
+//! Ventana de CensusIndex: barra de búsqueda arriba, tabla virtualizada, barra de
 //! estado abajo. Dos temas y atajos de teclado.
 //!
 //! Todo se dibuja con `painter` y `show_rows`: se pintan sólo las filas
@@ -492,7 +492,7 @@ impl GuiApp {
 
     fn top_bar(&mut self, ctx: &egui::Context) {
         let theme = self.theme;
-        egui::TopBottomPanel::top("census_top")
+        egui::TopBottomPanel::top("censusindex_top")
             .frame(
                 egui::Frame::NONE
                     .fill(theme.panel())
@@ -501,7 +501,7 @@ impl GuiApp {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(
-                        RichText::new("Census")
+                        RichText::new("CensusIndex")
                             .size(theme.font_title())
                             .strong()
                             .color(theme.accent()),
@@ -522,7 +522,7 @@ impl GuiApp {
                         if ui
                             .button(ai_label)
                             .on_hover_text(
-                                "Preguntar en lenguaje natural (Groq + herramientas de Census)",
+                                "Preguntar en lenguaje natural (Groq + herramientas de CensusIndex)",
                             )
                             .clicked()
                         {
@@ -602,7 +602,7 @@ impl GuiApp {
             .show(ctx, |ui| {
                 ui.set_min_width(430.0);
                 ui.label(
-                    RichText::new("Census indexa todas las unidades disponibles: locales por MFT y red o nube recorriendo carpetas. Destilda una para dejarla afuera.")
+                    RichText::new("CensusIndex indexa todas las unidades disponibles: locales por MFT y red o nube recorriendo carpetas. Destilda una para dejarla afuera.")
                         .size(theme.font_small())
                         .color(theme.muted()),
                 );
@@ -643,7 +643,7 @@ impl GuiApp {
                 if self.drives_dirty {
                     ui.add_space(6.0);
                     ui.label(
-                        RichText::new("Guardado. Reinicia Census para indexar el cambio.")
+                        RichText::new("Guardado. Reinicia CensusIndex para indexar el cambio.")
                             .size(theme.font_small())
                             .color(theme.accent()),
                     );
@@ -795,7 +795,7 @@ impl GuiApp {
                 ui.add_space(6.0);
                 ui.label(
                     RichText::new(
-                        "Un modelo de Groq responde sobre este mismo índice, con las herramientas de Census.",
+                        "Un modelo de Groq responde sobre este mismo índice, con las herramientas de CensusIndex.",
                     )
                     .size(theme.font_small())
                     .color(theme.muted()),
@@ -868,7 +868,7 @@ impl GuiApp {
             return;
         }
         let theme = self.theme;
-        egui::SidePanel::right("census_side")
+        egui::SidePanel::right("censusindex_side")
             .resizable(false)
             .exact_width(226.0)
             .frame(
@@ -955,7 +955,7 @@ impl GuiApp {
 
     fn status_bar(&mut self, ctx: &egui::Context) {
         let theme = self.theme;
-        egui::TopBottomPanel::bottom("census_status")
+        egui::TopBottomPanel::bottom("censusindex_status")
             .frame(
                 egui::Frame::NONE
                     .fill(theme.panel())
@@ -1140,7 +1140,7 @@ fn icono() -> egui::IconData {
 }
 
 pub fn run(index: Arc<Index>, opts: GuiOptions) -> Result<(), String> {
-    let title = format!("Census — volumen {}", index.letter);
+    let title = format!("CensusIndex — volumen {}", index.letter);
     // El journal mantiene la ventana al día sin reindexar (C2). Si no hay
     // permisos, el vigilante se corta solo y todo sigue como antes.
     let _vigilante = crate::hot::arrancar(Arc::clone(&index), index.letter);
@@ -1158,7 +1158,7 @@ pub fn run(index: Arc<Index>, opts: GuiOptions) -> Result<(), String> {
         ..Default::default()
     };
     eframe::run_native(
-        "Census",
+        "CensusIndex",
         native,
         Box::new(move |cc| {
             cc.egui_ctx.set_zoom_factor(1.0);

@@ -4,8 +4,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 
-use census_ipc::protocol::ReplyItem;
-use census_ipc::server::Searcher;
+use censusindex_ipc::protocol::ReplyItem;
+use censusindex_ipc::server::Searcher;
 
 use crate::index::{Index, F_DIR, F_ROOT};
 use crate::query::{self, Sort};
@@ -74,12 +74,12 @@ impl Service {
 }
 
 impl Searcher for Service {
-    /// Además de lo básico, Census puede entregar la identidad NTFS.
+    /// Además de lo básico, CensusIndex puede entregar la identidad NTFS.
     fn caps(&self) -> u32 {
         if self.index.has_identity() {
-            census_ipc::protocol::caps::DEFAULT | census_ipc::protocol::req::IDENTITY
+            censusindex_ipc::protocol::caps::DEFAULT | censusindex_ipc::protocol::req::IDENTITY
         } else {
-            census_ipc::protocol::caps::DEFAULT
+            censusindex_ipc::protocol::caps::DEFAULT
         }
     }
 

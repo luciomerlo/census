@@ -1,20 +1,20 @@
 [workspace]
 
 [package]
-name = "census"
+name = "censusindex"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
 description = "Indice instantaneo de archivos para macOS (Intel y Apple silicon), compartido por Tailscale y expuesto por MCP"
-repository = "https://github.com/luciomerlo/census"
-default-run = "census"
+repository = "https://github.com/luciomerlo/CensusIndex"
+default-run = "censusindex"
 
 [lib]
-name = "census"
+name = "censusindex"
 path = "src/lib.rs"
 
 [[bin]]
-name = "census"
+name = "censusindex"
 path = "src/main.rs"
 
 [dependencies]

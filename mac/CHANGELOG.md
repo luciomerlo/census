@@ -1,4 +1,4 @@
-# Changelog — Census macOS
+# Changelog — CensusIndex macOS
 
 ## 0.1.0 — alpha (2026-11-22)
 

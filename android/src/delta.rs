@@ -19,10 +19,10 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use census::index::{normalize_path, Builder, Index, Root, F_COMPLETE, F_DIR, F_ROOT, F_SYMLINK};
-use census::plataforma::Kind;
-use census::scan::sys;
-use census::volumes::Mount;
+use censusindex::index::{normalize_path, Builder, Index, Root, F_COMPLETE, F_DIR, F_ROOT, F_SYMLINK};
+use censusindex::plataforma::Kind;
+use censusindex::scan::sys;
+use censusindex::volumes::Mount;
 
 const MAX_DEPTH: u32 = 512;
 
@@ -40,7 +40,11 @@ pub enum Mode {
 pub struct Options {
     pub excludes: Vec<PathBuf>,
     pub pc_id: String,
-    pub host: census::index::HostInfo,
+    pub host: censusindex::index::HostInfo,
+    /// Volumenes que se recorren completos aunque haya copia previa. Los
+    /// extraibles FAT/exFAT no garantizan que el `mtime` de carpeta cambie si
+    /// se modificaron en otro equipo: al reconectarlos no se confia en la poda.
+    pub full_volumes: Vec<String>,
 }
 
 /// Cuanto trabajo hizo realmente el reescaneo. Es la medida de que tan
@@ -173,7 +177,8 @@ pub fn rescan(
         let path = PathBuf::from(&m.path);
         match sys::lstat(&path) {
             Ok(meta) => {
-                let old_id = old_root.map(|r| r.id);
+                let forced = opts.full_volumes.contains(&m.volume_id);
+                let old_id = if forced { None } else { old_root.map(|r| r.id) };
                 add_root(&mut ctx, m, &path, &meta, old_id, old_root);
             }
             Err(_) => match old_root {
@@ -208,7 +213,7 @@ fn add_root(
     old_id: Option<u32>,
     old_root: Option<&Root>,
 ) {
-    let scan_started = census::time::now_ns();
+    let scan_started = censusindex::time::now_ns();
     let id = ctx.b.push(
         path.as_os_str().as_encoded_bytes(),
         F_DIR | F_ROOT | F_COMPLETE,
@@ -263,7 +268,7 @@ fn add_root(
     root.total = m.total;
     root.free = m.free;
     root.scan_started = scan_started;
-    root.scanned_at = census::time::now_ns();
+    root.scanned_at = censusindex::time::now_ns();
     root.complete = complete;
     root.nodes = nodes;
     root.max_mtime = ctx.max_mtime.max(old_root.map_or(0, |r| r.max_mtime));
@@ -361,7 +366,7 @@ fn reuse_dir(ctx: &mut Ctx, dir: &Path, id: u32, old_id: u32, depth: u32) {
         }
         let name = old.name_bytes(c).to_vec();
         let full = join(dir, &name);
-        let path_s = census::index::path_string(&full);
+        let path_s = censusindex::index::path_string(&full);
         if matches!(ctx.mode, Mode::Dirty(_)) && !ctx.touches(&path_s) {
             ctx.copy_subtree(c, id);
             continue;
@@ -387,7 +392,7 @@ fn add_dir(
     parent: u32,
     depth: u32,
 ) {
-    let path_s = census::index::path_string(full);
+    let path_s = censusindex::index::path_string(full);
     let relist = match (&ctx.mode, old_child) {
         (_, None) | (Mode::Full, _) => true,
         (Mode::Sweep, Some(o)) => ctx
@@ -450,7 +455,7 @@ mod tests {
     use std::time::Duration;
 
     fn tmp(tag: &str) -> PathBuf {
-        let p = std::env::temp_dir().join(format!("census-android-{tag}-{}", std::process::id()));
+        let p = std::env::temp_dir().join(format!("censusindex-android-{tag}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&p);
         fs::create_dir_all(&p).unwrap();
         p

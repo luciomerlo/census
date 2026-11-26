@@ -38,7 +38,7 @@ Presets que solo rellenan `base_url`: `groq`, `ollama` (`:11434/v1`), `lmstudio`
 
 `search`, `count`, `largest`, `recent`, `stats` sobre el índice, con la misma sintaxis de consulta de cada plataforma (`path:`, `ext:`, `size:>`). El modelo solo ve **nombres y rutas**, nunca contenido. Hasta 8 pasos; salida de cada herramienta limitada a 4 000 caracteres.
 
-**Modo traducción (`tools=false`):** para modelos locales chicos sin funciones. El modelo devuelve solo `{"query","sort","limit"}`; Census ejecuta la consulta y arma la respuesta.
+**Modo traducción (`tools=false`):** para modelos locales chicos sin funciones. El modelo devuelve solo `{"query","sort","limit"}`; CensusIndex ejecuta la consulta y arma la respuesta.
 
 ## 5. Seguridad
 

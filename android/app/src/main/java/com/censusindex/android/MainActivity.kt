@@ -1,4 +1,4 @@
-package com.census.android
+package com.censusindex.android
 
 import android.app.Activity
 import android.os.Bundle
@@ -57,8 +57,26 @@ class MainActivity : Activity() {
         setContentView(root)
     }
 
+    private val volumeCb = object : android.os.storage.StorageManager.StorageVolumeCallback() {
+        override fun onStateChanged(volume: android.os.storage.StorageVolume) {
+            // Pendrive conectado/desconectado mientras la app esta abierta.
+            thread { if (Perms.hasAllFiles()) Indexer.onVolumesChanged(this@MainActivity); refreshStatus() }
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        getSystemService(android.os.storage.StorageManager::class.java).unregisterStorageVolumeCallback(volumeCb)
+    }
+
     override fun onResume() {
         super.onResume()
+        getSystemService(android.os.storage.StorageManager::class.java)
+            .registerStorageVolumeCallback(mainExecutor, volumeCb)
+        // Android 13+: sin este permiso la pregunta por un pendrive no se ve.
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1)
+        }
         if (Perms.hasAllFiles()) {
             MediaChangeJob.schedule(this)
             Indexer.schedulePeriodic(this)

@@ -636,7 +636,7 @@ mod tests {
 
     #[test]
     fn walks_a_temporary_tree_without_following_symlinks() {
-        let base = std::env::temp_dir().join(format!("census-scan-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("censusindex-scan-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(base.join("a/b")).unwrap();
         fs::write(base.join("a/f.txt"), b"hola").unwrap();
@@ -660,7 +660,7 @@ mod tests {
 
     #[test]
     fn index_roots_assigns_preorder_and_subtrees() {
-        let base = std::env::temp_dir().join(format!("census-ix-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("censusindex-ix-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(base.join("d")).unwrap();
         fs::write(base.join("x"), b"1").unwrap();

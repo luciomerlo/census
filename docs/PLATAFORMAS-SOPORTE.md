@@ -35,7 +35,7 @@ Fecha: 2026-11-26. Distingo tres niveles: **verificado** (compilé o corrí algo
 ## 3. Mac PowerPC: qué sí se puede
 
 1. **Cliente de consulta** (lo más realista): la API v1 de otra máquina se consulta desde un navegador viejo (p. ej. TenFourFox) o `curl`. No indexa el Mac, pero lo hace buscar en todo el catálogo.
-2. **Exportador en C99** (`census-lite`): `readdir`+`lstat` recursivo que escribe un `.cns` o JSON de nombres, ejecutado por `cron`/`launchd`. Sin `getattrlistbulk` (10.10+) ni FSEvents (10.5+ parcial). Es un programa aparte: no comparte código con el crate Rust.
+2. **Exportador en C99** (`censusindex-lite`): `readdir`+`lstat` recursivo que escribe un `.cns` o JSON de nombres, ejecutado por `cron`/`launchd`. Sin `getattrlistbulk` (10.10+) ni FSEvents (10.5+ parcial). Es un programa aparte: no comparte código con el crate Rust.
 3. **Sin TLS moderno** en 10.4/10.5: la IA en la nube no sirve ahí; usar relé o IA local por `http://`.
 No lo implementé; es una decisión de producto si vale la pena.
 
@@ -47,11 +47,11 @@ No lo implementé; es una decisión de producto si vale la pena.
 | **Raspberry Pi / SBC RISC-V (VisionFive, Milk-V)** | Hub 24/7 de Atlas y servidor de catálogo con poco consumo | Verificado `check` para armv7/aarch64/riscv64 |
 | **FreeBSD / TrueNAS CORE / pfSense** | Mismo caso NAS en BSD | FreeBSD OK; NetBSD y OpenBSD sin probar |
 | **ChromeOS (Crostini)** | Linux en contenedor | Es Linux: sirve el binario Linux |
-| **Termux (Android sin APK)** | Probar el núcleo en un teléfono sin firmar nada: `census index /sdcard` | El binario `aarch64-linux-android` sirve; sin servicio en segundo plano |
+| **Termux (Android sin APK)** | Probar el núcleo en un teléfono sin firmar nada: `censusindex index /sdcard` | El binario `aarch64-linux-android` sirve; sin servicio en segundo plano |
 | **iOS / iPadOS** | Tablet/teléfono Apple | **No viable** para indexar: el sandbox no deja leer el sistema de archivos; solo cliente de consulta |
 | **HarmonyOS / OpenHarmony** | Teléfonos Huawei sin Google | Existen destinos `*-linux-ohos`; app ArkTS aparte; solo si lo usás |
 | **Cliente web (PWA)** | Una sola interfaz de búsqueda para cualquier navegador contra `/v1/search` | Viable y barato: cubre iOS, PowerPC (navegador viejo) y TVs |
-| **Cliente de consola (`census query` por SSH/Tailscale SSH)** | Cualquier equipo con SSH | Ya existe en Linux/mac |
+| **Cliente de consola (`censusindex query` por SSH/Tailscale SSH)** | Cualquier equipo con SSH | Ya existe en Linux/mac |
 | **Windows en 32 bits / Windows 7** | PCs viejas de oficina | `i686-pc-windows-msvc` es nivel 1; Win7 nivel 3 |
 | **Haiku, Redox, Solaris/illumos** | Curiosidad | illumos compila; el resto sin probar y sin demanda real |
 

@@ -1,4 +1,4 @@
-# Census para Android
+# CensusIndex para Android
 
 Estado: núcleo Rust probado en este entorno; `.so` y APK debug compilan; **sin probar en un teléfono**.
 Código en [`android/`](../android/README.md). Contrato de API/identidad: [`MINIMO.md`](MINIMO.md), [`ATLAS.md`](ATLAS.md) §9–10.
@@ -16,7 +16,7 @@ Búsqueda hecha el 2026-11-26. Ninguno cubre el objetivo completo (indexar el te
 | Fossify File Manager, Files by Google | Búsqueda dentro del gestor de archivos | Solo el teléfono, sin catálogo ni PCs |
 | [VVV](https://linuxlinks.com/vvv-catalog-content-removable-volumes), [Catfish](https://github.com/crispstrobe/catfish), [Librer](https://alternativeto.net/software/librer/about), [Cathy](https://github.com/binsento42/Cathy) | Catálogos de discos **offline** (Windows/macOS/Linux) | Excelentes para discos desconectados, pero escritorio, índice manual, sin Android ni actualización en segundo plano |
 
-**Conclusión:** no hay un producto que combine (a) índice en el teléfono, (b) actualización continua en segundo plano y (c) catálogo multi-equipo con copias offline. Census ya tiene (c) (Atlas, `cloud_id`/`volume_id`, offline opt-in) y el núcleo `.cns` de Linux; Android aporta (a) y (b).
+**Conclusión:** no hay un producto que combine (a) índice en el teléfono, (b) actualización continua en segundo plano y (c) catálogo multi-equipo con copias offline. CensusIndex ya tiene (c) (Atlas, `cloud_id`/`volume_id`, offline opt-in) y el núcleo `.cns` de Linux; Android aporta (a) y (b).
 
 ## 2. Decisión de diseño
 
@@ -71,6 +71,10 @@ Lo que sí transfiere al teléfono es la proporción de trabajo (0–1 carpetas 
 - **Nombre:** por defecto el que el sistema le da al teléfono (`Settings.Global.DEVICE_NAME`, o el modelo). Se puede reemplazar por uno propio **sin espacios** (letras, números, `-`, `_`, `.`; máx. 63); si lleva espacios la app rechaza y sugiere la versión con guiones. Vacío vuelve al del sistema. Lógica común en `linux/src/devname.rs`, ya cableada en la config de Linux para reutilizarla en macOS. El nombre nuevo llega al catálogo en el próximo reescaneo.
 - **Índice:** solo nombres, carpetas y metadatos de tamaño/fecha; nunca contenido.
 - **IA:** endpoint configurable (Groq por defecto; cualquier API OpenAI-compatible; IA local), auto-selección de modelo, lista, nombre forzado y fallback. Contrato en [`IA-ENDPOINT.md`](IA-ENDPOINT.md). En la pantalla principal, el interruptor *IA* manda la frase (3 palabras o más) al modelo; sin él, la búsqueda por nombre o ruta es instantánea y local.
+
+## 4c. Pendrives, SD y discos USB
+
+Al conectar un volumen extraíble se aplica una política: **preguntar** (por defecto: notificación *Indexar / Siempre / Nunca*), **siempre** (forzar) o **nunca**; global o por volumen. Se analiza el volumen entero (cada partición que el sistema monte llega como un volumen aparte) y, al reconectarlo, se recorre completo sin confiar en el `mtime` de carpeta. Detalle y límites (NTFS/ext4 solo si el sistema los monta): [`INDEXACION-RAPIDA.md`](INDEXACION-RAPIDA.md) §4.
 
 ## 5. Permisos y límites
 

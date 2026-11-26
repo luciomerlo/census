@@ -4,7 +4,7 @@
 //! entradas aleatorias y algunos casos límite construidos a mano, que es donde
 //! se esconden los `slice index out of range` de los parsers binarios.
 
-use census_ipc::protocol::{self, build_reply, parse_reply, parse_request, ReplyItem};
+use censusindex_ipc::protocol::{self, build_reply, parse_reply, parse_request, ReplyItem};
 
 /// xorshift64: determinista y suficiente para esto.
 struct Rng(u64);

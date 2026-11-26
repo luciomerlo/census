@@ -1,4 +1,4 @@
-# Compila Census para Windows on ARM64 (Snapdragon X, Surface ARM, etc.).
+# Compila CensusIndex para Windows on ARM64 (Snapdragon X, Surface ARM, etc.).
 #
 # Es el mismo código que x64: no hay una sola rama `cfg(target_arch)` en el
 # proyecto, así que no hay port que hacer. Lo que cambia es el linker.
@@ -32,7 +32,7 @@ if ($LASTEXITCODE -ne 0) { throw "build falló" }
 
 $v = (Select-String -Path Cargo.toml -Pattern '^version = "(.*)"').Matches[0].Groups[1].Value
 New-Item -ItemType Directory -Force dist | Out-Null
-$out = "dist/census-$v-windows-arm64.exe"
-Copy-Item "target/$target/release/census.exe" $out -Force
+$out = "dist/censusindex-$v-windows-arm64.exe"
+Copy-Item "target/$target/release/censusindex.exe" $out -Force
 $size = (Get-Item $out).Length
 Write-Host ("== Listo: {0} ({1:N0} bytes) ==" -f $out, $size)

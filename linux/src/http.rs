@@ -46,7 +46,7 @@ fn serve_with(
         )
     })?;
     eprintln!(
-        "census {} en http://{host}:{}/v1/ (pc_id {})",
+        "censusindex {} en http://{host}:{}/v1/ (pc_id {})",
         env!("CARGO_PKG_VERSION"),
         opts.port,
         fixed

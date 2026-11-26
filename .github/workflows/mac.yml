@@ -50,25 +50,25 @@ jobs:
       - name: app bundle
         run: |
           mkdir -p dist
-          cp "mac/target/${{ matrix.target }}/release/census" "dist/census-${{ matrix.arch }}"
-          chmod +x "dist/census-${{ matrix.arch }}"
+          cp "mac/target/${{ matrix.target }}/release/censusindex" "dist/censusindex-${{ matrix.arch }}"
+          chmod +x "dist/censusindex-${{ matrix.arch }}"
           cd mac
           ./scripts/make-icon.sh
-          CENSUS_BIN="../dist/census-${{ matrix.arch }}" \
-            CENSUS_APP_NAME="Census-${{ matrix.app }}" \
+          CENSUS_BIN="../dist/censusindex-${{ matrix.arch }}" \
+            CENSUS_APP_NAME="CensusIndex-${{ matrix.app }}" \
             ./scripts/package.sh "${{ matrix.arch }}"
           ditto -c -k --sequesterRsrc --keepParent \
-            "dist/Census-${{ matrix.app }}.app" \
-            "dist/Census-${{ matrix.app }}.zip"
-          (cd dist && shasum -a 256 "Census-${{ matrix.app }}.zip" > "Census-${{ matrix.app }}.zip.sha256")
-          cp "dist/Census-${{ matrix.app }}.zip" "dist/Census-${{ matrix.app }}.zip.sha256" ../dist/
+            "dist/CensusIndex-${{ matrix.app }}.app" \
+            "dist/CensusIndex-${{ matrix.app }}.zip"
+          (cd dist && shasum -a 256 "CensusIndex-${{ matrix.app }}.zip" > "CensusIndex-${{ matrix.app }}.zip.sha256")
+          cp "dist/CensusIndex-${{ matrix.app }}.zip" "dist/CensusIndex-${{ matrix.app }}.zip.sha256" ../dist/
       - uses: actions/upload-artifact@v4
         with:
-          name: census-macos-${{ matrix.arch }}
+          name: censusindex-macos-${{ matrix.arch }}
           path: |
-            dist/census-${{ matrix.arch }}
-            dist/Census-${{ matrix.app }}.zip
-            dist/Census-${{ matrix.app }}.zip.sha256
+            dist/censusindex-${{ matrix.arch }}
+            dist/CensusIndex-${{ matrix.app }}.zip
+            dist/CensusIndex-${{ matrix.app }}.zip.sha256
           if-no-files-found: error
 
   universal:
@@ -79,32 +79,32 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          pattern: census-macos-*
+          pattern: censusindex-macos-*
           path: dist
           merge-multiple: true
       - name: lipo
         run: |
           mkdir -p mac/dist
-          lipo -create dist/census-x86_64 dist/census-aarch64 -output mac/dist/census-universal
-          chmod +x mac/dist/census-universal
+          lipo -create dist/censusindex-x86_64 dist/censusindex-aarch64 -output mac/dist/censusindex-universal
+          chmod +x mac/dist/censusindex-universal
           cd mac
           ./scripts/make-icon.sh
-          CENSUS_APP_NAME=Census-universal ./scripts/package.sh universal
+          CENSUS_APP_NAME=CensusIndex-universal ./scripts/package.sh universal
           ditto -c -k --sequesterRsrc --keepParent \
-            "dist/Census-universal.app" \
-            "dist/Census-universal.zip"
-          (cd dist && shasum -a 256 Census-universal.zip > Census-universal.zip.sha256)
-          cp dist/census-universal ../dist/
-          cp dist/Census-universal.zip ../dist/
-          cp dist/Census-universal.zip.sha256 ../dist/
-          (cd ../dist && shasum -a 256 census-universal Census-*.zip > SHA256SUMS.txt)
+            "dist/CensusIndex-universal.app" \
+            "dist/CensusIndex-universal.zip"
+          (cd dist && shasum -a 256 CensusIndex-universal.zip > CensusIndex-universal.zip.sha256)
+          cp dist/censusindex-universal ../dist/
+          cp dist/CensusIndex-universal.zip ../dist/
+          cp dist/CensusIndex-universal.zip.sha256 ../dist/
+          (cd ../dist && shasum -a 256 censusindex-universal CensusIndex-*.zip > SHA256SUMS.txt)
           cat ../dist/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: census-macos-universal
+          name: censusindex-macos-universal
           path: |
-            dist/census-universal
-            dist/Census-universal.zip
-            dist/Census-universal.zip.sha256
+            dist/censusindex-universal
+            dist/CensusIndex-universal.zip
+            dist/CensusIndex-universal.zip.sha256
             dist/SHA256SUMS.txt
           if-no-files-found: error

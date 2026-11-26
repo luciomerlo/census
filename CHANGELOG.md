@@ -1,6 +1,6 @@
 # Changelog
 
-Todos los cambios relevantes de Census. El formato sigue
+Todos los cambios relevantes de CensusIndex. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
 [Versionado Semántico](https://semver.org/lang/es/).
 
@@ -31,23 +31,29 @@ Ronda de revisión de bugs y dependencias. Sin cambios de formato ni de protocol
 - `clippy -D warnings` limpio y `cargo fmt` aplicado.
 
 ### Agregado
-- `tests/robustness.rs` y `crates/census-ipc/tests/fuzz_lite.rs`: 20 000 buffers al azar
+- `tests/robustness.rs` y `crates/censusindex-ipc/tests/fuzz_lite.rs`: 20 000 buffers al azar
   contra los parsers del IPC, truncado byte por byte, 500 snapshots de basura, cabeceras
   con conteos `u32::MAX`, 5 000 consultas y 5 000 rutas al azar.
 - Suite con `-C overflow-checks=on` (99 tests) y workflow de CI (fmt, clippy, tests,
   release, auditoría).
-- `census probe`: diagnóstico del IPC (ventanas, capacidades, flags de la respuesta).
+- `censusindex probe`: diagnóstico del IPC (ventanas, capacidades, flags de la respuesta).
 - Mensaje de capacidades `WM_USER + 402` y `flags` de la respuesta con **sólo los campos
   que vinieron** (`run_count` nunca se anuncia).
 
 ## [Unreleased]
 
+### Cambiado
+
+- **Renombrado a CensusIndex**: binario `censusindex`, crates `censusindex-*`, carpeta de datos de Linux/macOS `censusindex`, paquete Android `com.censusindex.android`. Se conservan los identificadores de compatibilidad (ver README).
+
 ### Agregado
+
+- **Android** (`android/`): núcleo de reescaneo incremental, app Kotlin, política de pendrives (preguntar/siempre/nunca), IA con endpoint configurable y nombre de dispositivo sin espacios. Ver `docs/ANDROID.md`, `docs/INDEXACION-RAPIDA.md`, `docs/IA-ENDPOINT.md`.
 
 - **Actualización en caliente con el USN Journal (C2)**: un vigilante lee el
   diario de NTFS cada 2 s y aplica los cambios sobre una capa `Overlay`. Un
   archivo creado aparece en la búsqueda sin reindexar y uno borrado
-  desaparece. `census watch` lo muestra en vivo.
+  desaparece. `censusindex watch` lo muestra en vivo.
 - La marca del journal (`journal_id`, `next_usn`) viaja dentro del snapshot; si
   el diario se reinició, se avisa que hace falta reindexar.
 
@@ -95,10 +101,10 @@ Primera versión que se puede usar de punta a punta.
 - **IPC**: servidor `QUERY2W` (clase `CENSUS_IPC`) y cliente del mismo protocolo, byte a
   byte, incluido el detalle de que el offset de cada ítem apunta al prefijo de largo del
   nombre (así lo lee WizEverything).
-- **MCP**: `census mcp` por stdio con `search`, `count`, `largest`, `recent` y `stats`.
-- **Lenguaje natural (Groq)**: `census ask` y el botón `IA` de la ventana; modelos
+- **MCP**: `censusindex mcp` por stdio con `search`, `count`, `largest`, `recent` y `stats`.
+- **Lenguaje natural (Groq)**: `censusindex ask` y el botón `IA` de la ventana; modelos
   rankeados, failover por cuota (`x-ratelimit-*`), tool-calling sobre las herramientas de
-  Census y clave cifrada con DPAPI (`census key`).
+  CensusIndex y clave cifrada con DPAPI (`censusindex key`).
 - **Ventana**: tres temas `dark`/`light`/`contrast` (las claves de WizEverything) con
   contraste verificado por test, tipografía Segoe UI + Segoe UI Symbol, tabla
   virtualizada, `Enter` abre, `Ctrl+C` copia la ruta, selector de unidades.
@@ -106,7 +112,7 @@ Primera versión que se puede usar de punta a punta.
   `assets/icon.svg`, `icon.ico` (16/32/48 en DIB + 256 en PNG) y script `tools/make-icon.ps1`.
 
 ### Cambiado
-- La ventana oculta la consola del binario al abrirse (`census gui`).
+- La ventana oculta la consola del binario al abrirse (`censusindex gui`).
 - Las capturas se toman por PID y clase de ventana, no por `MainWindowHandle`.
 
 ### Corregido
@@ -116,7 +122,7 @@ Primera versión que se puede usar de punta a punta.
 - A 16 px el anillo y el mango finos desaparecían: trazos más gruesos y lente más clara
   que el anillo en los tamaños chicos.
 - El tema oscuro era poco legible: texto y secundario ahora pasan WCAG AA/AAA.
-- `census mcp` mandaba las herramientas sin la clave `tools` al asistente de Groq.
+- `censusindex mcp` mandaba las herramientas sin la clave `tools` al asistente de Groq.
 - `scan_dir` rotulaba la raíz como `C:` aunque indexara otra unidad.
 - El test de la ventana quedó desactualizado al agregar campos al estado.
 
@@ -126,6 +132,6 @@ Primera versión que se puede usar de punta a punta.
 - Parseo de MFT sobre [`omerbenamram/mft`](https://github.com/omerbenamram/mft) y
   [`omerbenamram/ntfs`](https://github.com/omerbenamram/ntfs) (MIT).
 
-[Unreleased]: https://github.com/luciomerlo/census/compare/v0.1.1...HEAD
-[0.1.1]: https://github.com/luciomerlo/census/releases/tag/v0.1.1
-[0.1.0]: https://github.com/luciomerlo/census/releases/tag/v0.1.0
+[Unreleased]: https://github.com/luciomerlo/CensusIndex/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/luciomerlo/CensusIndex/releases/tag/v0.1.1
+[0.1.0]: https://github.com/luciomerlo/CensusIndex/releases/tag/v0.1.0

@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
   <key>CFBundleName</key>
-  <string>Census</string>
+  <string>CensusIndex</string>
   <key>CFBundleDisplayName</key>
-  <string>Census</string>
+  <string>CensusIndex</string>
   <key>CFBundleIdentifier</key>
-  <string>com.luciomerlo.census</string>
+  <string>com.luciomerlo.censusindex</string>
   <key>CFBundleVersion</key>
   <string>0.1.0</string>
   <key>CFBundleShortVersionString</key>
@@ -15,7 +15,7 @@
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleExecutable</key>
-  <string>census</string>
+  <string>censusindex</string>
   <key>CFBundleIconFile</key>
   <string>icon</string>
   <key>LSMinimumSystemVersion</key>
@@ -25,7 +25,7 @@
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>NSHumanReadableCopyright</key>
-  <string>MIT · Census</string>
+  <string>MIT · CensusIndex</string>
   <key>NSSupportsAutomaticGraphicsSwitching</key>
   <true/>
 </dict>

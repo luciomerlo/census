@@ -1,4 +1,4 @@
-//! Contrato de `census volumes --json` (`docs/ATLAS.md` §9/§10).
+//! Contrato de `censusindex volumes --json` (`docs/ATLAS.md` §9/§10).
 //!
 //! Este JSON es lo que consumen Wiz, Sort y Atlas: los nombres y los tipos son
 //! parte del contrato, no un detalle de presentación. La prueba lanza el
@@ -9,14 +9,14 @@ use std::process::Command;
 use serde_json::Value;
 
 fn volumenes() -> Vec<Value> {
-    let salida = Command::new(env!("CARGO_BIN_EXE_census"))
+    let salida = Command::new(env!("CARGO_BIN_EXE_censusindex"))
         .arg("volumes")
         .arg("--json")
         .output()
-        .expect("no se pudo ejecutar census volumes --json");
+        .expect("no se pudo ejecutar censusindex volumes --json");
     assert!(
         salida.status.success(),
-        "census volumes --json falló: {}",
+        "censusindex volumes --json falló: {}",
         String::from_utf8_lossy(&salida.stderr)
     );
     let texto = String::from_utf8(salida.stdout).expect("el JSON no es UTF-8");

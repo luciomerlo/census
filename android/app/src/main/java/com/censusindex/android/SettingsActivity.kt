@@ -1,4 +1,4 @@
-package com.census.android
+package com.censusindex.android
 
 import android.app.Activity
 import android.app.AlertDialog
@@ -37,6 +37,9 @@ class SettingsActivity : Activity() {
     private lateinit var fallback: CheckBox
     private lateinit var tools: CheckBox
     private lateinit var local: CheckBox
+    private val policies = listOf("ask", "always", "never")
+    private var polSelected = -1
+    private lateinit var polSpinner: Spinner
     private val modes = listOf("auto", "list", "force")
     private val presets = listOf("groq", "ollama", "lmstudio", "llamacpp", "vllm", "custom")
     private val presetUrl = mapOf(
@@ -62,6 +65,21 @@ class SettingsActivity : Activity() {
         devName = edit("vacío = nombre del sistema")
         devHint = TextView(this).also { col.addView(it) }
         col.addView(Button(this).apply { text = "Guardar nombre"; setOnClickListener { saveName() } })
+
+        label("\nPendrives, SD y discos USB conectados")
+        val pol = Spinner(this).also { col.addView(it) }
+        pol.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item,
+            listOf("Preguntar cada vez", "Indexar siempre", "No indexar nunca"))
+        pol.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: android.widget.AdapterView<*>?, v: android.view.View?, i: Int, id: Long) {
+                if (i == polSelected) return
+                polSelected = i
+                thread { Indexer.setPolicy(this@SettingsActivity, "*", policies[i]) }
+            }
+            override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
+        }
+        polSpinner = pol
+        col.addView(Button(this).apply { text = "Volúmenes conocidos…"; setOnClickListener { knownVolumes() } })
 
         label("\nIA (lenguaje natural)")
         val preset = Spinner(this).also { col.addView(it) }
@@ -92,8 +110,11 @@ class SettingsActivity : Activity() {
 
     private fun load() = thread {
         val d = Indexer.deviceInfo(this)
+        val dp = Indexer.policyGet(this).optString("default", "ask")
         val ep = Indexer.aiGet(this).optJSONArray("endpoints")?.optJSONObject(0)
         runOnUiThread {
+            polSelected = policies.indexOf(dp).coerceAtLeast(0)
+            polSpinner.setSelection(polSelected)
             devName.setText(d.optString("custom"))
             devHint.text = "Nombre actual: ${d.optString("name")}  (sistema: ${d.optString("os_name")})"
             ep?.let {
@@ -139,6 +160,27 @@ class SettingsActivity : Activity() {
             val items = Array(arr.length()) { arr.getString(it) }
             AlertDialog.Builder(this).setTitle("Modelos (mejor primero)")
                 .setItems(items) { _, i -> model.setText(items[i]); mode.setSelection(1) }.show()
+        }
+    }
+
+    /** Lista de volúmenes vistos; tocar uno rota su política: heredar → siempre → nunca → preguntar. */
+    private fun knownVolumes() = thread {
+        val p = Indexer.policyGet(this)
+        val known = p.optJSONObject("known") ?: JSONObject()
+        val per = p.optJSONObject("per_volume") ?: JSONObject()
+        val ids = known.keys().asSequence().toList()
+        val names = ids.map { id ->
+            val k = known.getJSONObject(id)
+            "${k.optString("label").ifBlank { k.optString("path") }} — ${per.optString(id, "(global)")}"
+        }.toTypedArray()
+        runOnUiThread {
+            if (ids.isEmpty()) { Toast.makeText(this, "Todavía no se conectó ningún volumen extraíble", Toast.LENGTH_LONG).show(); return@runOnUiThread }
+            AlertDialog.Builder(this).setTitle("Tocar para cambiar").setItems(names) { _, i ->
+                val cur = per.optString(ids[i], "")
+                val next = when (cur) { "" -> "always"; "always" -> "never"; "never" -> "ask"; else -> "always" }
+                thread { Indexer.setPolicy(this, ids[i], next) }
+                Toast.makeText(this, "→ $next", Toast.LENGTH_SHORT).show()
+            }.show()
         }
     }
 }

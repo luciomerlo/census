@@ -1,4 +1,4 @@
-package com.census.android
+package com.censusindex.android
 
 import android.content.BroadcastReceiver
 import android.content.Context

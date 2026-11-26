@@ -1,20 +1,21 @@
 [package]
-name = "census-ipc"
+name = "censusindex-shim"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Protocolo IPC de consulta (QUERY2W) y servidor de ventana de Census"
+description = "Shim ABI-compatible con Everything64.dll: traduce el SDK a IPC de CensusIndex"
 
 [lib]
-name = "census_ipc"
+name = "censusindex_shim"
 path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+censusindex-ipc = { path = "../censusindex-ipc" }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
-    "Win32_UI_WindowsAndMessaging",
-    "Win32_System_DataExchange",
-    "Win32_System_LibraryLoader",
     "Win32_Graphics_Gdi",
     "Win32_System_Threading",
 ] }

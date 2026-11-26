@@ -26,7 +26,7 @@ es miembro del workspace de Windows). No toca `src/`, `C.wcat` ni `mac/`.
   campos + `marca` (null si no hay snapshot), archivos con
   `path,name,size_bytes,alloc_bytes,mtime_ns,kind,volume_id,source`.
 - **Empaquetado Intel/ARM**: `scripts/build-linux.sh` genera
-  `dist/census-0.1.0-linux-x86_64.tar.gz` y `...-aarch64.tar.gz` (musl
+  `dist/censusindex-0.1.0-linux-x86_64.tar.gz` y `...-aarch64.tar.gz` (musl
   estático) + `SHA256SUMS.txt`; service systemd e `install.sh`.
 - **Calidad**: 42 tests en Windows; `cargo clippy --target
   x86_64-unknown-linux-musl --all-targets -- -D warnings` limpio; builds

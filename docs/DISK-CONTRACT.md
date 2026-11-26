@@ -1,4 +1,4 @@
-# Quién escribe qué: contrato de archivos entre Census, WizEverything y SortEverything
+# Quién escribe qué: contrato de archivos entre CensusIndex, WizEverything y SortEverything
 
 Regla de oro: **ninguna app asume que las otras están corriendo**. Sort y Wiz pueden no
 estar abiertas a la vez, pueden abrirse en cualquier orden y pueden haber quedado
@@ -8,14 +8,14 @@ Rutas verificadas leyendo el código de cada proyecto (no de memoria).
 
 ## 1. Archivos propios de cada app
 
-### Census
+### CensusIndex
 | Ruta | Qué es | Quién escribe |
 |---|---|---|
-| `%LOCALAPPDATA%\Census\C.wcat` | snapshot del índice (nodos + arena de nombres) | **sólo Census** |
-| `%LOCALAPPDATA%\Census\C.wcat.tmp.<pid>` | temporal de escritura | sólo Census; se barre si tiene > 1 h |
-| `%LOCALAPPDATA%\Census\pause.json` | pausa del trabajo de fondo | sólo Census |
-| `%LOCALAPPDATA%\Census\nightly-state.json` | avance de la tanda nocturna | sólo Census |
-| `%APPDATA%\Census\settings.ini` | `excluded_drives=` y la clave de Groq cifrada con DPAPI | sólo Census |
+| `%LOCALAPPDATA%\Census\C.wcat` | snapshot del índice (nodos + arena de nombres) | **sólo CensusIndex** |
+| `%LOCALAPPDATA%\Census\C.wcat.tmp.<pid>` | temporal de escritura | sólo CensusIndex; se barre si tiene > 1 h |
+| `%LOCALAPPDATA%\Census\pause.json` | pausa del trabajo de fondo | sólo CensusIndex |
+| `%LOCALAPPDATA%\Census\nightly-state.json` | avance de la tanda nocturna | sólo CensusIndex |
+| `%APPDATA%\Census\settings.ini` | `excluded_drives=` y la clave de Groq cifrada con DPAPI | sólo CensusIndex |
 
 ### WizEverything
 | Ruta | Qué es | Quién escribe |
@@ -33,11 +33,11 @@ Rutas verificadas leyendo el código de cada proyecto (no de memoria).
 | `%LOCALAPPDATA%\SortEverything\pause.json`, `nightly-state.json` | pausa y checkpoint | sólo Sort |
 
 Ambas apps permiten mover el sqlite con `WIZE_SHARED_INDEX=<ruta>` (para pruebas o
-perfil portable). Census no lee ni escribe ese archivo nunca.
+perfil portable). CensusIndex no lee ni escribe ese archivo nunca.
 
 ## 2. Lo que cada uno no toca, nunca
 
-- **Census** no abre `content-index.sqlite3`, no extrae texto, no hace OCR, no abre
+- **CensusIndex** no abre `content-index.sqlite3`, no extrae texto, no hace OCR, no abre
   comprimidos, no mueve ni renombra archivos del usuario.
 - **Wiz** no abre `C.wcat` y no indexa la MFT: pide por IPC o MCP.
 - **Sort** no abre `C.wcat`, no define bits de capacidad ni campos del protocolo, y no
@@ -48,16 +48,16 @@ perfil portable). Census no lee ni escribe ese archivo nunca.
 
 - Siempre `archivo.tmp.<pid>` en **el mismo directorio** y después `rename`: en NTFS un
   lector ve el archivo viejo o el nuevo, nunca la mitad.
-- Census toma `LockFileEx` sobre `C.wcat.lock` mientras escribe. Los lectores no toman
+- CensusIndex toma `LockFileEx` sobre `C.wcat.lock` mientras escribe. Los lectores no toman
   lock: validan magic, versión y checksum, y si no cuadra reindexan.
 - SQLite compartido: `journal_mode=WAL`, `busy_timeout=5000`, y **un solo escritor** por
   lease con `writer_id` (token por proceso, no PID), `heartbeat` cada 30 s y TTL 300 s.
-- Si el disco se llena al guardar el snapshot: se conserva el anterior y Census sigue con
+- Si el disco se llena al guardar el snapshot: se conserva el anterior y CensusIndex sigue con
   el índice en RAM.
 
 ## 4. Identidad de archivo
 
-- **Census** calcula `vol_serial` + `frn` leyendo la MFT y los expone por IPC cuando el
+- **CensusIndex** calcula `vol_serial` + `frn` leyendo la MFT y los expone por IPC cuando el
   cliente anuncia la capacidad `IDENTITY` (64 bits, y en JSON como **string hexadecimal**
   para no perder precisión).
 - **Sort** además puede sacarla del handle (`GetFileInformationByHandleEx` /`FileIdInfo`),
@@ -82,7 +82,7 @@ perfil portable). Census no lee ni escribe ese archivo nunca.
   corren tareas pesadas a la vez. Para nube y red: `cloud:<provider>`.
 - Conflicto: aviso visible + notificación si está minimizada, con **Cancelar / Esperar /
   Forzar**; forzar pide confirmación y queda en el log.
-- **Wiz tiene prioridad** si el usuario fuerza las dos: Census pausa en el próximo punto
+- **Wiz tiene prioridad** si el usuario fuerza las dos: CensusIndex pausa en el próximo punto
   seguro y avisa «pausado por WizEverything».
 
 ## 6. Nada arranca solo

@@ -426,7 +426,7 @@ mod tests {
 
     #[test]
     fn json_ida_y_vuelta() {
-        let dir = std::env::temp_dir().join(format!("census-atlas-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("censusindex-atlas-{}", std::process::id()));
         let path = dir.join("overrides.json");
         let mut o = Overrides::nuevas();
         let mut r = regla("PC-B", "cloud:xyz", Accion::Unir);
@@ -443,7 +443,7 @@ mod tests {
 
     #[test]
     fn sin_archivo_es_vacio() {
-        let path = std::env::temp_dir().join("census-atlas-no-existe/overrides.json");
+        let path = std::env::temp_dir().join("censusindex-atlas-no-existe/overrides.json");
         let o = Overrides::cargar(&path).expect("sin archivo no es error");
         assert!(o.reglas().is_empty());
     }

@@ -3,10 +3,10 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.luciomerlo.census.serve</string>
+  <string>com.luciomerlo.censusindex.serve</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/local/bin/census</string>
+    <string>/usr/local/bin/censusindex</string>
     <string>serve</string>
     <string>--no-watch</string>
   </array>
@@ -19,8 +19,8 @@
   <key>Nice</key>
   <integer>10</integer>
   <key>StandardOutPath</key>
-  <string>/tmp/census-serve.out.log</string>
+  <string>/tmp/censusindex-serve.out.log</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/census-serve.err.log</string>
+  <string>/tmp/censusindex-serve.err.log</string>
 </dict>
 </plist>

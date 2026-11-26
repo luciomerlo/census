@@ -23,7 +23,7 @@ Antes de empezar y durante la tarea se consulta
 `%LOCALAPPDATA%\WizeShared\activity.json`:
 
 ```json
-{"pid": 1234, "app": "Census|Wiz|Sort", "task": "C2",
+{"pid": 1234, "app": "CensusIndex|Wiz|Sort", "task": "C2",
  "resources": ["disk:0", "cloud:google"], "roots": ["C:\\"],
  "state": "running|paused", "forced": true, "heartbeat": 1760000000000}
 ```
@@ -31,40 +31,40 @@ Antes de empezar y durante la tarea se consulta
 `heartbeat` con más de 120 s de antigüedad no bloquea. Si no se puede identificar el
 disco (`disk:?`) o es nube, no se inventa lock: se avisa por raíces solapadas.
 
-Recursos que anuncia cada app: Census `disk:<n>`, `usn`, `wcat`; Wiz `disk:<n>`,
+Recursos que anuncia cada app: CensusIndex `disk:<n>`, `usn`, `wcat`; Wiz `disk:<n>`,
 `cloud:<provider>`, `sqlite`; Sort `disk:<n>`, `cloud:<provider>`.
 
 Si hay conflicto: aviso en la app, notificación de Windows si está minimizada, y opciones
 **Cancelar / Esperar / Forzar** (forzar pide confirmación y queda en el log). Si el usuario
-fuerza Wiz y Census a la vez, **Wiz gana**: Census pausa en el próximo punto seguro y avisa
+fuerza Wiz y CensusIndex a la vez, **Wiz gana**: CensusIndex pausa en el próximo punto seguro y avisa
 «pausado por WizEverything».
 
 ## Tareas
 
 | Noche | Bloque | App | Tarea | Recursos | Raíces | Duración | Pausa | Forzada |
 |---|---|---|---|---|---|---|---|---|
-| 1 | 1 | Census | **C1** identidad por IPC (`vol_serial`+`frn`, string hex) | `disk:0` | — | 3,5 h | sí | sí |
+| 1 | 1 | CensusIndex | **C1** identidad por IPC (`vol_serial`+`frn`, string hex) | `disk:0` | — | 3,5 h | sí | sí |
 | 1 | 1 | Wiz | **W-P0** pausa + checkpoint (`pause.json`, `nightly-state.json`) | `cpu` | — | 1,5 h | sí | sí |
 | 1 | 2 | Wiz | **W-N1** contenido v2 + lease (`vol_serial`/`frn`, `source`) | `disk:0`, sqlite | `C:\Users` | 3,5 h | sí | sí |
-| 1 | 2 | Sort | **S-1** cliente `census.rs` por `WM_COPYDATA` | `cpu` | — | 1,5 h | sí | sí |
-| 2 | 1 | Census | **C2a** delta USN: watermark y journal id por volumen | `disk:0` | `C:\` | 4 h | sí | sí |
+| 1 | 2 | Sort | **S-1** cliente `censusindex.rs` por `WM_COPYDATA` | `cpu` | — | 1,5 h | sí | sí |
+| 2 | 1 | CensusIndex | **C2a** delta USN: watermark y journal id por volumen | `disk:0` | `C:\` | 4 h | sí | sí |
 | 2 | 2 | Sort | **S-2** pausa + checkpoint propios | `cpu` | — | 3 h | sí | sí |
-| 3 | 1 | Census | **C2b** USN: replay, compactación y journal corrupto | `disk:0` | `C:\` | 3,5 h | sí | sí |
+| 3 | 1 | CensusIndex | **C2b** USN: replay, compactación y journal corrupto | `disk:0` | `C:\` | 3,5 h | sí | sí |
 | 3 | 2 | Wiz | **W-N3** worker de `dupdirs` + presupuesto de OCR | `disk:0`, `cpu` | `C:\Users` | 3,5 h | sí | sí |
 | 4 | 1 | Wiz | **W-N2** comprimidos (`archive_docs`, `archive!member`) | `disk:0`, sqlite | `C:\Users` | 4 h | sí | sí |
 | 4 | 2 | Sort | **S-3a** OCR de Windows: PDF → bitmap → OCR | `gpu:0`, `cpu` | — | 3,5 h | sí | sí |
-| 5 | 1 | Census | **C3** robustez de `serve`: dos instancias, cliente colgado, sin elevación | `disk:0` | — | 2 h | sí | sí |
-| 5 | 1 | Census | **C4** documentación del contrato + `census probe` extendido | `cpu` | — | 1,5 h | sí | sí |
+| 5 | 1 | CensusIndex | **C3** robustez de `serve`: dos instancias, cliente colgado, sin elevación | `disk:0` | — | 2 h | sí | sí |
+| 5 | 1 | CensusIndex | **C4** documentación del contrato + `censusindex probe` extendido | `cpu` | — | 1,5 h | sí | sí |
 | 5 | 2 | Sort | **S-3b** OCR: idiomas ausentes, caché y pruebas con escaneo real | `gpu:0`, `cpu` | — | 3,5 h | sí | sí |
-| 6 | 1 | Census | **C5** nube explícita: fuera de `index_all`, `--include-cloud` metadata-only | `cloud:google` | `G:\`, `H:\` | 2 h | sí | sí |
-| 6 | 1 | Census | **C6** `activity-Census.json` (per-app, una entrada) + locks `disk:<n>`/`cloud:<p>`, aviso de conflicto y `must_yield` ante Wiz | `cpu`, `wcat`, `usn` | — | 2,5 h | sí | sí |
+| 6 | 1 | CensusIndex | **C5** nube explícita: fuera de `index_all`, `--include-cloud` metadata-only | `cloud:google` | `G:\`, `H:\` | 2 h | sí | sí |
+| 6 | 1 | CensusIndex | **C6** `activity-Census.json` (per-app, una entrada) + locks `disk:<n>`/`cloud:<p>`, aviso de conflicto y `must_yield` ante Wiz | `cpu`, `wcat`, `usn` | — | 2,5 h | sí | sí |
 | 7 | buffer | cualquiera | regresión cruzada: migración real, `.ecat`/WOF, integración | `disk:0` | — | 4 h | sí | sí |
 
 El shim `Everything64.dll` **sale del calendario**: Sort confirmó que no lo usa (va por
-`WM_COPYDATA`). `crates/census-shim` queda como placeholder opcional.
+`WM_COPYDATA`). `crates/censusindex-shim` queda como placeholder opcional.
 
 Reparto por disco: en ninguna noche hay dos bloques pesados sobre el mismo `disk:0`
-simultáneos. Si el usuario fuerza Wiz y Census a la vez, Census cede.
+simultáneos. Si el usuario fuerza Wiz y CensusIndex a la vez, CensusIndex cede.
 
 ## Criterio de aceptación de cada tanda
 

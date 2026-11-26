@@ -20,7 +20,7 @@
 //!
 //! La letra de unidad **no es identidad**: cambia al reasignar en el
 //! Administrador de discos, y dos discos externos distintos se conectan en
-//! momentos distintos y reciben la misma letra. Census usa tres niveles:
+//! momentos distintos y reciben la misma letra. CensusIndex usa tres niveles:
 //!
 //! ```text
 //! DiskHwId  = FNV-1a64(serial || vendor || modelo || capacidad)  # el aparato
@@ -30,7 +30,7 @@
 //!
 //! Las cadenas se normalizan (trim, colapsar espacios, mayúsculas) y los campos
 //! se separan con NUL, igual que en Mac y Linux, para que `("a","bc")` y
-//! `("ab","c")` no colisionen. `census volumes --json` es el contrato que
+//! `("ab","c")` no colisionen. `censusindex volumes --json` es el contrato que
 //! consumen Wiz, Sort y Atlas.
 //!
 //! ## La trampa de los puentes USB baratos (§10.4)
@@ -41,7 +41,7 @@
 //! el GUID del disco (o de la partición, o las propiedades crudas del
 //! descriptor) al hash. Si aun así dos discos físicos distintos terminan con la
 //! misma clave, se marca `posible_duplicado` y se resuelve a mano
-//! (`census atlas unir/separar`): **nunca** se fusiona en silencio.
+//! (`censusindex atlas unir/separar`): **nunca** se fusiona en silencio.
 //!
 //! ## Si no hay identidad
 //!
@@ -119,7 +119,7 @@ struct StoragePropertyQuery {
 fn debug(msg: impl FnOnce() -> String) {
     let activo = std::env::var_os("CENSUS_DEBUG").is_some_and(|v| v != "0" && !v.is_empty());
     if activo {
-        eprintln!("[census:debug] {}", msg());
+        eprintln!("[censusindex:debug] {}", msg());
     }
 }
 
@@ -793,7 +793,7 @@ fn geometria_de_volumen(letra: char) -> (Geometria, Vec<String>) {
 }
 
 /// Un volumen montado con **todas** sus identidades: presentación, hardware,
-/// partición y nube. Es la fila que emite `census volumes --json`.
+/// partición y nube. Es la fila que emite `censusindex volumes --json`.
 #[derive(Debug, Clone)]
 pub struct Volumen {
     pub letra: char,
@@ -1218,7 +1218,7 @@ pub fn plan() -> Vec<Vec<u32>> {
     tandas
 }
 
-/// Texto listo para imprimir en `census drives`.
+/// Texto listo para imprimir en `censusindex drives`.
 pub fn resumen() -> String {
     let discos = discos();
     if discos.is_empty() {

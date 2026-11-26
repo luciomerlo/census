@@ -54,7 +54,7 @@ impl Method {
     }
 }
 
-/// Lo que pasó con una unidad: sirve para la barra de estado y para `census drives`.
+/// Lo que pasó con una unidad: sirve para la barra de estado y para `censusindex drives`.
 #[derive(Clone, Debug)]
 pub struct DriveReport {
     pub name: String,
@@ -223,5 +223,5 @@ pub fn index_all() -> Result<(Arc<Index>, Vec<DriveReport>), String> {
 
 #[cfg(not(windows))]
 pub fn index_all() -> Result<(Arc<Index>, Vec<DriveReport>), String> {
-    Err("Census sólo indexa volúmenes en Windows".into())
+    Err("CensusIndex sólo indexa volúmenes en Windows".into())
 }
