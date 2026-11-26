@@ -312,3 +312,6 @@ byte a byte del protocolo y 8 del formato `C.wcat`.
 Falta: delta por USN Journal (hoy el snapshot se reusa con una ventana de 30 s), el shim
 `Everything64.dll` para que SortEverything funcione sin tocarla, y ordenar por tamaño,
 fecha y ruta además de por nombre.
+
+
+IA con endpoint configurable: [`docs/IA-ENDPOINT.md`](docs/IA-ENDPOINT.md). Arquitecturas y sistemas soportados: [`docs/PLATAFORMAS-SOPORTE.md`](docs/PLATAFORMAS-SOPORTE.md).

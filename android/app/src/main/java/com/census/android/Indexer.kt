@@ -2,6 +2,7 @@ package com.census.android
 
 import android.content.Context
 import android.os.Build
+import android.provider.Settings
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -34,7 +35,10 @@ object Indexer {
         // pc_id: 32 hex, generado una vez. No se usa ANDROID_ID (cambia al reinstalar).
         val pcId = prefs.getString("pc_id", null)
             ?: UUID.randomUUID().toString().replace("-", "").also { prefs.edit().putString("pc_id", it).apply() }
-        handle = Native.nativeOpen(app.filesDir.path, pcId, Build.MODEL)
+        // Nombre por defecto: el que el usuario le puso al telefono en Ajustes.
+        val osName = Settings.Global.getString(app.contentResolver, "device_name")?.takeIf { it.isNotBlank() }
+            ?: Build.MODEL
+        handle = Native.nativeOpen(app.filesDir.path, pcId, osName)
         return handle
     }
 
@@ -84,6 +88,13 @@ object Indexer {
 
     fun search(ctx: Context, q: String, limit: Int = 200): JSONObject =
         JSONObject(Native.nativeSearch(init(ctx), q, limit))
+
+    fun deviceInfo(ctx: Context): JSONObject = JSONObject(Native.nativeDeviceInfo(init(ctx)))
+    fun setDeviceName(ctx: Context, name: String): JSONObject = JSONObject(Native.nativeSetDeviceName(init(ctx), name))
+    fun aiGet(ctx: Context): JSONObject = JSONObject(Native.nativeAiGet(init(ctx)))
+    fun aiSet(ctx: Context, cfg: JSONObject): JSONObject = JSONObject(Native.nativeAiSet(init(ctx), cfg.toString()))
+    fun aiModels(ctx: Context, ep: JSONObject): JSONObject = JSONObject(Native.nativeAiModels(init(ctx), ep.toString()))
+    fun ask(ctx: Context, q: String): JSONObject = JSONObject(Native.nativeAsk(init(ctx), q, true))
 
     fun stats(ctx: Context): JSONObject = JSONObject(Native.nativeStats(init(ctx)))
 

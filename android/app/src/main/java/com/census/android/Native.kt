@@ -13,5 +13,13 @@ object Native {
     external fun nativeStats(h: Long): String
     /** Bloquea hasta que el servidor muera: llamar desde un hilo propio. */
     external fun nativeServe(h: Long, port: Int, lan: Boolean, token: String): String
+    external fun nativeDeviceInfo(h: Long): String
+    /** "" vuelve al nombre del sistema; si no, sin espacios. */
+    external fun nativeSetDeviceName(h: Long, name: String): String
+    external fun nativeAiGet(h: Long): String
+    external fun nativeAiSet(h: Long, cfgJson: String): String
+    external fun nativeAiModels(h: Long, endpointJson: String): String
+    /** Bloquea por red: llamar desde un hilo de fondo. */
+    external fun nativeAsk(h: Long, question: String, spanish: Boolean): String
     external fun nativeClose(h: Long)
 }

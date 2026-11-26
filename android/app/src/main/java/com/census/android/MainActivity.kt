@@ -18,6 +18,7 @@ import kotlin.concurrent.thread
 class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var list: ListView
+    private lateinit var ai: Switch
     private val rows = ArrayList<String>()
     private lateinit var adapter: ArrayAdapter<String>
 
@@ -34,6 +35,11 @@ class MainActivity : Activity() {
             text = "Indexar ahora"
             setOnClickListener { run { Indexer.full(this@MainActivity) } }
         }
+        val settings = Button(this).apply {
+            text = "Nombre e IA…"
+            setOnClickListener { startActivity(android.content.Intent(this@MainActivity, SettingsActivity::class.java)) }
+        }
+        ai = Switch(this).apply { text = "IA (lenguaje natural)" }
         val serve = Switch(this).apply {
             text = "Compartir índice en la red/Tailscale (puerto ${ServeService.PORT})"
             setOnCheckedChangeListener { _, on -> if (on) ServeService.start(context) else ServeService.stop(context) }
@@ -46,7 +52,7 @@ class MainActivity : Activity() {
             override fun beforeTextChanged(s: CharSequence?, a: Int, c: Int, d: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, c: Int, d: Int) {}
         })
-        for (v in listOf(status, perm, reindex, serve, q)) root.addView(v, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        for (v in listOf(status, perm, reindex, settings, serve, ai, q)) root.addView(v, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         root.addView(list, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
         setContentView(root)
     }
@@ -77,6 +83,15 @@ class MainActivity : Activity() {
     private fun run(block: () -> Unit) = thread { block(); refreshStatus() }
 
     private fun search(q: String) = thread {
+        if (ai.isChecked) {
+            // La IA se consulta con Enter implícito al dejar de tipear: se evita una
+            // llamada de red por letra exigiendo al menos 3 palabras.
+            if (q.trim().split(Regex("\\s+")).size < 3) return@thread
+            val r = Indexer.ask(this, q)
+            val text = r.optString("text", r.optString("error"))
+            runOnUiThread { rows.clear(); rows.addAll(text.lines()); adapter.notifyDataSetChanged() }
+            return@thread
+        }
         val r = Indexer.search(this, q, 200).optJSONArray("results")
         val out = ArrayList<String>()
         if (r != null) for (i in 0 until r.length()) out.add(r.getJSONObject(i).getString("path"))

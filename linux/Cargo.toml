@@ -7,6 +7,12 @@ description = "Indice instantaneo de archivos para Linux, compartido por Tailsca
 repository = "https://github.com/example/census"
 default-run = "census"
 
+[features]
+default = ["tls"]
+tls = ["dep:ureq", "ureq/tls"]
+# IA solo por http (loopback/LAN), sin TLS: para plataformas sin `ring`.
+plain = ["dep:ureq"]
+
 [lib]
 name = "census"
 path = "src/lib.rs"
@@ -22,6 +28,10 @@ memchr = "2"
 rayon = "1"
 tiny_http = "0.12"
 notify = "6.1"
+# Cliente HTTP(S) para la IA. TLS por rustls; para arquitecturas que `ring` no
+# soporta (powerpc, s390x, mips) se compila con --no-default-features y se usa
+# un endpoint http local (ver docs/IA-ENDPOINT.md).
+ureq = { version = "2.12", default-features = false, features = ["json"], optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

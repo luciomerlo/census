@@ -54,6 +54,9 @@ pub struct Config {
     /// Etiqueta del entorno que se publica en el catalogo.
     #[serde(default)]
     pub env: String,
+    /// Nombre propio del dispositivo, sin espacios. Vacio = el del sistema.
+    #[serde(default)]
+    pub device_name: String,
     /// Raices extra que se indexan ademas de los montajes detectados.
     #[serde(default)]
     pub roots: Vec<String>,
@@ -94,6 +97,7 @@ impl Default for Config {
             token: String::new(),
             pc_id: String::new(),
             env: String::new(),
+            device_name: String::new(),
             roots: Vec::new(),
             exclude: default_excludes(),
             jobs: 0,
@@ -173,6 +177,11 @@ impl Config {
         self.pc_id.clone()
     }
 
+    /// Nombre del dispositivo: el propio (validado) o el del sistema.
+    pub fn device_name(&self) -> String {
+        crate::devname::effective(&self.device_name, &hostname())
+    }
+
     pub fn env_label(&self) -> String {
         let e = self.env.trim();
         if !e.is_empty() {
@@ -188,7 +197,7 @@ impl Config {
 
     pub fn host_info(&self) -> crate::index::HostInfo {
         crate::index::HostInfo {
-            hostname: hostname(),
+            hostname: self.device_name(),
             env: self.env_label(),
             os: std::env::consts::OS.into(),
             arch: std::env::consts::ARCH.into(),

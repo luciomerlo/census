@@ -66,6 +66,12 @@ Lo que sí transfiere al teléfono es la proporción de trabajo (0–1 carpetas 
 - Un volumen que ya no está montado **conserva su última copia** en el índice (probado): se puede buscar offline. El estado `offline` lo asigna el catálogo, no el teléfono.
 - Teléfono apagado: la PC conserva el último `.cns` publicado (Atlas §"Offline"). Mientras el teléfono está prendido, la PC puede consultar `GET /v1/search` por Tailscale (activar *Compartir índice*; exige token).
 
+## 4b. Nombre del dispositivo e IA
+
+- **Nombre:** por defecto el que el sistema le da al teléfono (`Settings.Global.DEVICE_NAME`, o el modelo). Se puede reemplazar por uno propio **sin espacios** (letras, números, `-`, `_`, `.`; máx. 63); si lleva espacios la app rechaza y sugiere la versión con guiones. Vacío vuelve al del sistema. Lógica común en `linux/src/devname.rs`, ya cableada en la config de Linux para reutilizarla en macOS. El nombre nuevo llega al catálogo en el próximo reescaneo.
+- **Índice:** solo nombres, carpetas y metadatos de tamaño/fecha; nunca contenido.
+- **IA:** endpoint configurable (Groq por defecto; cualquier API OpenAI-compatible; IA local), auto-selección de modelo, lista, nombre forzado y fallback. Contrato en [`IA-ENDPOINT.md`](IA-ENDPOINT.md). En la pantalla principal, el interruptor *IA* manda la frase (3 palabras o más) al modelo; sin él, la búsqueda por nombre o ruta es instantánea y local.
+
 ## 5. Permisos y límites
 
 - `MANAGE_EXTERNAL_STORAGE` (acceso a todos los archivos): obligatorio para ver más que multimedia desde Android 11. Google Play lo restringe; se distribuye como APK directo. La app es **solo lectura**.
@@ -75,8 +81,8 @@ Lo que sí transfiere al teléfono es la proporción de trabajo (0–1 carpetas 
 
 ## 6. Verificado y pendiente
 
-Verificado aquí: 16 tests del núcleo (incluye equivalencia incremental = escaneo completo, preorden válido, volumen ausente conservado, SD remontada sin duplicar, exclusiones); 42 tests de `linux/` sin regresión; `clippy -D warnings` limpio; `cargo check --target aarch64-linux-android`; `libcensus_android.so` (arm64, 1,1 MB) enlazada con NDK 27 y con los 9 símbolos JNI exportados; APK debug generado con Gradle con la `.so` adentro (Kotlin compila, manifiesto válido).
+Verificado aquí: 18 tests del núcleo (incluye equivalencia incremental = escaneo completo, preorden válido, volumen ausente conservado, SD remontada sin duplicar, exclusiones); 59 tests de `linux/` (42 previos + 17 de IA y nombre de dispositivo); `clippy -D warnings` limpio; `cargo check --target aarch64-linux-android`; `libcensus_android.so` (arm64, 2,7 MB con TLS) enlazada con NDK 27 y con los 15 símbolos JNI exportados; APK debug generado con Gradle con la `.so` adentro (Kotlin compila, manifiesto válido).
 
-**No verificado:** ejecución en un teléfono real; consultas a `MediaStore` (`MediaDelta.kt`); comportamiento de `JobScheduler`/`TriggerContentUri` con el proceso muerto; el servicio HTTP; tiempos en el teléfono.
+**No verificado:** ejecución en un teléfono real; consultas a `MediaStore` (`MediaDelta.kt`); comportamiento de `JobScheduler`/`TriggerContentUri` con el proceso muerto; el servicio HTTP; la IA contra Groq real (solo se probó contra un servidor falso); la pantalla de ajustes en un teléfono; tiempos en el teléfono.
 
 Pendiente: subir el `.cns` al hub de Atlas cuando exista (`atlas push`); `inotify` en carpetas calientes; i18n; `Marca` propia (`l1:` de Linux por ahora); persistir `ServeService` tras reinicio.

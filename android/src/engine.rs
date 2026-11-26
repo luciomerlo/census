@@ -6,6 +6,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 
+use census::ai::{AiConfig, Endpoint};
 use census::index::{Builder, Index};
 use census::query::{self, Sort, Spec};
 use census::snapshot;
@@ -28,7 +29,10 @@ const DEFAULT_EXCLUDES: &[&str] = &[
 pub struct Engine {
     dir: PathBuf,
     pc_id: String,
-    device: String,
+    /// Nombre que da el sistema operativo (por defecto).
+    os_name: String,
+    /// Nombre propio sin espacios; vacio = usar el del sistema.
+    custom_name: RwLock<String>,
     ix: RwLock<Arc<Index>>,
     mounts: Mutex<Vec<Mount>>,
     work: Mutex<()>,
@@ -43,11 +47,90 @@ impl Engine {
         Engine {
             dir: dir.to_path_buf(),
             pc_id: pc_id.to_string(),
-            device: device.to_string(),
+            os_name: device.to_string(),
+            custom_name: RwLock::new(
+                std::fs::read_to_string(dir.join("device_name.txt"))
+                    .map(|t| t.trim().to_string())
+                    .unwrap_or_default(),
+            ),
             ix: RwLock::new(Arc::new(ix)),
             mounts: Mutex::new(Vec::new()),
             work: Mutex::new(()),
         }
+    }
+
+    /// Nombre efectivo del dispositivo en el catalogo.
+    pub fn device_name(&self) -> String {
+        census::devname::effective(&self.custom_name.read().expect("name"), &self.os_name)
+    }
+
+    pub fn device_info(&self) -> Value {
+        let custom = self.custom_name.read().expect("name").clone();
+        json!({"name": self.device_name(), "os_name": self.os_name, "custom": custom})
+    }
+
+    /// `""` vuelve al nombre del sistema; si no, debe ser valido (sin espacios).
+    /// Se refleja en el catalogo en el proximo reescaneo.
+    pub fn set_device_name(&self, raw: &str) -> Result<Value, String> {
+        let name = if raw.trim().is_empty() {
+            String::new()
+        } else {
+            census::devname::validate(raw)?
+        };
+        let path = self.dir.join("device_name.txt");
+        if name.is_empty() {
+            let _ = std::fs::remove_file(&path);
+        } else {
+            std::fs::write(&path, &name).map_err(|e| e.to_string())?;
+        }
+        *self.custom_name.write().expect("name") = name;
+        Ok(self.device_info())
+    }
+
+    fn ai_path(&self) -> PathBuf {
+        self.dir.join("ai.json")
+    }
+
+    /// Configuracion de IA con la clave enmascarada + presets disponibles.
+    pub fn ai_get(&self) -> Value {
+        let mut v = AiConfig::load(&self.ai_path()).masked();
+        v["presets"] = json!(["groq", "ollama", "lmstudio", "llamacpp", "vllm", "custom"]);
+        v["groq_url"] = json!(census::ai::GROQ_URL);
+        v
+    }
+
+    /// `{"endpoints":[...]}`; una clave con `…` conserva la guardada.
+    pub fn ai_set(&self, text: &str) -> Result<Value, String> {
+        let v: Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
+        let eps: Vec<Endpoint> = serde_json::from_value(v["endpoints"].clone())
+            .map_err(|e| format!("endpoints: {e}"))?;
+        let mut cfg = AiConfig::load(&self.ai_path());
+        cfg.replace(eps)?;
+        cfg.save(&self.ai_path())?;
+        Ok(cfg.masked())
+    }
+
+    /// Modelos que ofrece un endpoint (para el selector). Acepta el JSON de un
+    /// endpoint aun sin guardar.
+    pub fn ai_models(&self, endpoint_json: &str) -> Result<Value, String> {
+        let mut ep: Endpoint = serde_json::from_str(endpoint_json).map_err(|e| e.to_string())?;
+        if ep.api_key.contains('…') {
+            ep.api_key = AiConfig::load(&self.ai_path())
+                .endpoints
+                .iter()
+                .find(|o| o.name == ep.name)
+                .map(|o| o.api_key.clone())
+                .unwrap_or_default();
+        }
+        ep.validate()?;
+        Ok(json!({"models": census::ai::models_of(&ep)?}))
+    }
+
+    /// Pregunta en lenguaje natural. Bloquea (red): llamar fuera del hilo de UI.
+    pub fn ask(&self, question: &str, spanish: bool) -> Result<Value, String> {
+        let cfg = AiConfig::load(&self.ai_path());
+        let a = census::ai::ask(&cfg, question, &self.current(), spanish, &|_, _| {})?;
+        Ok(json!({"endpoint": a.endpoint, "model": a.model, "text": a.text}))
     }
 
     pub fn current(&self) -> Arc<Index> {
@@ -73,7 +156,7 @@ impl Engine {
             }
         }
         let host = census::index::HostInfo {
-            hostname: self.device.clone(),
+            hostname: self.device_name(),
             os: "android".into(),
             arch: std::env::consts::ARCH.into(),
             version: env!("CARGO_PKG_VERSION").into(),
@@ -177,7 +260,7 @@ impl Engine {
                 port,
                 lan,
                 token: token.to_string(),
-                name: self.device.clone(),
+                name: self.device_name(),
             },
         )
     }
@@ -300,5 +383,56 @@ mod tests {
         let e = Engine::open(&data, "pc-test", "Pixel");
         assert!(e.sweep().is_err());
         let _ = fs::remove_dir_all(data.parent().unwrap());
+    }
+}
+
+#[cfg(test)]
+mod name_tests {
+    use super::*;
+
+    fn eng(tag: &str) -> (Engine, PathBuf) {
+        let d = std::env::temp_dir().join(format!("census-name-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        (Engine::open(&d, "pc", "Pixel 8 de Lucio"), d)
+    }
+
+    #[test]
+    fn default_is_os_name_custom_must_have_no_spaces_and_persists() {
+        let (e, d) = eng("a");
+        assert_eq!(e.device_name(), "Pixel 8 de Lucio");
+        assert!(e
+            .set_device_name("Pixel 8")
+            .unwrap_err()
+            .contains("Pixel-8"));
+        assert_eq!(
+            e.device_name(),
+            "Pixel 8 de Lucio",
+            "un rechazo no cambia nada"
+        );
+        assert_eq!(e.set_device_name("tel-lucio").unwrap()["name"], "tel-lucio");
+        let again = Engine::open(&d, "pc", "Pixel 8 de Lucio");
+        assert_eq!(again.device_name(), "tel-lucio");
+        assert_eq!(
+            again.set_device_name("").unwrap()["name"],
+            "Pixel 8 de Lucio"
+        );
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn ai_config_masks_key_and_keeps_it_on_resave() {
+        let (e, d) = eng("b");
+        let cfg = json!({"endpoints":[{"name":"groq","base_url":census::ai::GROQ_URL,
+            "api_key":"gsk_SECRET123456"}]});
+        let shown = e.ai_set(&cfg.to_string()).unwrap();
+        assert!(!shown.to_string().contains("SECRET"));
+        let back = json!({"endpoints": e.ai_get()["endpoints"].clone()});
+        e.ai_set(&back.to_string()).unwrap();
+        let on_disk = std::fs::read_to_string(d.join("ai.json")).unwrap();
+        assert!(on_disk.contains("gsk_SECRET123456"));
+        assert!(e
+            .ai_set(r#"{"endpoints":[{"name":"x","base_url":"http://a/v1","api_key":"k"}]}"#)
+            .is_err());
+        let _ = std::fs::remove_dir_all(d);
     }
 }

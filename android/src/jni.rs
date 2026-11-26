@@ -157,3 +157,80 @@ pub extern "system" fn Java_com_census_android_Native_nativeClose(
         drop(unsafe { Box::from_raw(h as *mut Arc<Engine>) });
     }
 }
+
+fn with<F: FnOnce(&Arc<Engine>) -> Result<Value, String>>(h: jlong, f: F) -> Result<Value, String> {
+    unsafe { eng(h) }
+        .ok_or_else(|| "handle invalido".to_string())
+        .and_then(f)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_census_android_Native_nativeDeviceInfo(
+    mut env: JNIEnv,
+    _c: JClass,
+    h: jlong,
+) -> jstring {
+    let r = with(h, |e| Ok(e.device_info()));
+    res(&mut env, r)
+}
+
+/// `""` vuelve al nombre del sistema.
+#[no_mangle]
+pub extern "system" fn Java_com_census_android_Native_nativeSetDeviceName(
+    mut env: JNIEnv,
+    _c: JClass,
+    h: jlong,
+    name: JString,
+) -> jstring {
+    let n = s(&mut env, &name);
+    let r = with(h, |e| e.set_device_name(&n));
+    res(&mut env, r)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_census_android_Native_nativeAiGet(
+    mut env: JNIEnv,
+    _c: JClass,
+    h: jlong,
+) -> jstring {
+    let r = with(h, |e| Ok(e.ai_get()));
+    res(&mut env, r)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_census_android_Native_nativeAiSet(
+    mut env: JNIEnv,
+    _c: JClass,
+    h: jlong,
+    cfg: JString,
+) -> jstring {
+    let c = s(&mut env, &cfg);
+    let r = with(h, |e| e.ai_set(&c));
+    res(&mut env, r)
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_census_android_Native_nativeAiModels(
+    mut env: JNIEnv,
+    _c: JClass,
+    h: jlong,
+    endpoint: JString,
+) -> jstring {
+    let c = s(&mut env, &endpoint);
+    let r = with(h, |e| e.ai_models(&c));
+    res(&mut env, r)
+}
+
+/// Bloquea por red: Kotlin lo llama desde un hilo de fondo.
+#[no_mangle]
+pub extern "system" fn Java_com_census_android_Native_nativeAsk(
+    mut env: JNIEnv,
+    _c: JClass,
+    h: jlong,
+    question: JString,
+    spanish: jboolean,
+) -> jstring {
+    let q = s(&mut env, &question);
+    let r = with(h, |e| e.ask(&q, spanish != 0));
+    res(&mut env, r)
+}

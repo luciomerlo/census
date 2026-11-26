@@ -26,6 +26,8 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".SettingsActivity" android:exported="false" />
+
         <!-- Despierta la app cuando MediaStore cambia, sin servicio permanente. -->
         <service
             android:name=".MediaChangeJob"

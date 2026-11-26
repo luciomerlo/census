@@ -421,7 +421,7 @@ fn serve_cmd(args: &[String]) -> ExitCode {
         port,
         lan,
         token: cfg.token,
-        name: config::hostname(),
+        name: config::Config::load().device_name(),
     };
     match census::http::serve(&ix, &opts) {
         Ok(()) => ExitCode::SUCCESS,

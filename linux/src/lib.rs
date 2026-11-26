@@ -13,10 +13,12 @@
 //! * cada raiz lleva una identidad de disco estable (UUID) para que dos PC
 //!   puedan comparar la misma unidad aunque este montada en otra ruta.
 
+pub mod ai;
 pub mod api;
 pub mod catalog;
 pub mod cloud;
 pub mod config;
+pub mod devname;
 pub mod diskid;
 pub mod fmt;
 pub mod http;
